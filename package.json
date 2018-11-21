@@ -1,0 +1,28 @@
+{
+  "name": "distort-on-ipfs",
+  "version": "0.0.1",
+  "description": "Testing ideas for DistoRt over IPFS",
+  "main": "server.js",
+  "scripts": {
+    "start": "nodemon server.js"
+  },
+  "keywords": [
+    "Twistor",
+    "DistoRt",
+    "IPFS",
+    "PubSub"
+  ],
+  "author": "Ryan Andersen <ryan.andersen@alumni.ubc.ca>",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "body-parser": "^1.18.3",
+    "browserify": "^16.2.3",
+    "express": "^4.16.4",
+    "ipfs-api": "^25.0.0",
+    "mongoose": "^5.3.4",
+    "password-prompt": "^1.0.7"
+  },
+  "devDependencies": {
+    "nodemon": "^1.18.4"
+  }
+}
