@@ -3,10 +3,13 @@ var mongoose = require('mongoose'),
   Schema = mongoose.Schema;
 
 var CertSchema = new Schema({
-  groups: [{
-    name: String,
-    subgroupIndex: Number
-  }],
+  accountName: {
+    type: String,
+    default: 'root'
+  },
+  groups: [
+    String
+  ],
   key: {
     encrypt: {
       pub: {
@@ -32,7 +35,16 @@ var CertSchema = new Schema({
   peerId: {
     type: String,
     required: 'Must be associated with an IPFS peer-ID'
-  }
+  },
+  status: {
+    type: String,
+    enum: ['valid', 'invalidated'],
+    default: 'valid'
+  },
 });
+
+// Peer cannot have multiple certs of the same public/private key values.
+// Must either update old key times or add a new key and invalidate the old
+CertSchema.index({peerId: 1, key: 1}, {unique: true});
 
 module.exports = mongoose.model('Certs', CertSchema);

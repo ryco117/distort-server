@@ -4,13 +4,14 @@ var mongoose = require('mongoose'),
 
 var OutMessageSchema = new Schema({
   groupId: {
-    type: mongoose.Schema.Type.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Groups',
     required: 'Must reference the existing group message was received on'
   },
   index: {
     type: Number,
-    unique: true
+    unique: true,
+    required: 'Must specify message index within group'
   },
   lastStatusChange: {
     type: Date,
@@ -26,8 +27,9 @@ var OutMessageSchema = new Schema({
     default: 'enqueued'
   },
   to: {
-    type: String,
-    required: 'Cannot save message without target'
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Certs',
+    required: 'Cannot save message without target (certificate)'
   }
 });
 

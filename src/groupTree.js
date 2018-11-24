@@ -17,9 +17,18 @@ exports.randomPath = function() {
     r = r >>> 1;
   }
   return path;
-}; 
+};
 
 exports.randomFromLevel = function(level) {
   var path = randomPath();
   return path[parseInt(Math.abs(level))];
-}; 
+};
+
+exports.randomPathForGroup = function(groupName) {
+  var path = randomPath();
+  for(var i = 0; i < path.length; i++) {
+    path[i] = groupName + ":" + path[i];
+  }
+
+  return path;
+};

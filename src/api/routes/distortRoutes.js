@@ -12,4 +12,8 @@ module.exports = function(app) {
     .get(distort.readMissedMessages)
     .put(distort.postMessage)
     .delete(distort.leaveGroup);
+
+  // Fetch messages from a group in given range
+  app.route('/groups/:groupName/:indexStart/:indexEnd')
+    .get(distort.readMessagesInRange);
 };

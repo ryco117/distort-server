@@ -4,16 +4,13 @@ var mongoose = require('mongoose'),
 
 var PeerSchema = new Schema({
   cert: {
-    type: mongoose.Schema.Type.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Certs',
     required: 'Must include certificate with peer definition'
   },
   nickname: {
-    type: String
-  },
-  peerId: {
     type: String,
-    required: 'Must be associated with an IPFS peer-ID'
+    unique: true
   }
 });
 
