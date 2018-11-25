@@ -7,7 +7,7 @@ var AccountSchema = new Schema({
     type: String,
     default: 'root'
   },
-  activeGroupId: {
+  activeGroup: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Groups'
   },
@@ -16,9 +16,9 @@ var AccountSchema = new Schema({
     ref: 'Certs',
     required: 'Account must be given a certificate ID to use for its key-pair'
   },
-  lastInteraction: {
-    type: Date,
-    default: Date.now
+  enabled: {
+    type: Boolean,
+    default: true
   },
   peerId: {
     type: String,

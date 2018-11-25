@@ -26,6 +26,37 @@ const secp256k1 = sjcl.ecc.curves.k256;
 // Create distort-on- ipfs object to export
 var distort_ipfs = {};
 
+// Group naming helpers
+function toGroupIndexCouple(group, index) {
+  return group + ":" + index;
+}
+function fromGroupIndexCouple(groupIndex) {
+  // Reconstruct group name and subindex from joined field in DB (with logic in case group name contains ':')
+  const g = groupIndex.split(':');
+  const groupName = g.slice(0, g.length-1).join(":");
+  const groupSubIndex = g[g.length - 1];
+
+  return {name: groupName, index: groupSubIndex}
+}
+function nameAndSubgroupToTopic(name, subgroupIndex) {
+  if(subgroupIndex > 0) {
+    name += '-' + subgroupIndex;
+  } else {
+    name += '-all';
+  }
+
+  return name;
+}
+// Simple helper to determine if non-empty intersection of arrays
+function hasGroupInPath(groupName, path, groups) {
+  for(var i = 0; i < path.length; i++) {
+    if(groups.includes(toGroupIndexCouple(groupName, path[i]))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 distort_ipfs.initIpfs = function(address, port) {
   var self = this;
 
@@ -126,7 +157,7 @@ distort_ipfs.initIpfs = function(address, port) {
 
           // TODO: REMOVE TEST VALUE self.activeGroupId
           if(account.accountName === 'root') {
-            self.activeGroupId = account.activeGroupId;
+            self.activeGroupId = account.activeGroup;
           }
 
           // Load keypairs for current certificate
@@ -144,11 +175,7 @@ distort_ipfs.initIpfs = function(address, port) {
                 throw console.error(err);
               }
               for(var  i = 0; i < groups.length; i++) {
-                // Reconstruct group name and subindex from joined field in DB (with logic in case group name contains ':')
-                const g = groups[i].split(':');
-                const groupName = g.slice(0, g.length-1).join(":");
-                const groupSubIndex = g[g.length - 1];
-                self.subscribe(groupName, groupSubIndex);
+                self.subscribe(groups[i].name, groups[i].subgroupIndex);
               }
             });
           });
@@ -161,16 +188,6 @@ distort_ipfs.initIpfs = function(address, port) {
     self.certIntervalId = setInterval(() => self._publishCert(), 60 * SECONDS_PER_MINUTE * MS_PER_SECOND);
   });
 };
-
-// Simple helper to determine if non-empty intersection of arrays
-function hasGroupInPath(path, groups) {
-  for(var i = 0; i < path.length; i++) {
-    if(groups.includes(path[i])) {
-      return true;
-    }
-  }
-  return false;
-}
 
 function packageMessage(msg) {
   // Implement encryption, padding, and signing function to package message
@@ -215,12 +232,7 @@ distort_ipfs._dequeueMsg = function () {
   // Find active group for account
   Group.findById(self.activeGroupId, function(err, group) {
     if(err) {
-      return res.send(err);
-    }
-
-    const randPath = groupTree.randomPathForGroup(group.name);
-    if(DEBUG) {
-      console.log(JSON.stringify(randPath));
+      return console.error(err);
     }
 
     OutMessage
@@ -234,9 +246,14 @@ distort_ipfs._dequeueMsg = function () {
         console.log('Queried messages: ' + JSON.stringify(msgs));
       }
 
+      const randPath = groupTree.randomPath();
+      if(DEBUG) {
+        console.log(JSON.stringify(randPath));
+      }
+
       var m = {v: PROTOCOL_VERSION, fromAccount: group.accountName};
       for(var i = 0; i < msgs.length; i++) {
-        if(hasGroupInPath(randPath, msgs[i].to.groups)) {
+        if(hasGroupInPath(group.name, randPath, msgs[i].to.groups)) {
           m.message = msgs[i].message;
           m.to = msgs[i].to;
           break;
@@ -251,9 +268,11 @@ distort_ipfs._dequeueMsg = function () {
 
       // Publish message to IPFS
       try {
-        distort_ipfs.publish(group.name, JSON.stringify(m));
+        for(var i = 0; i < randPath.length; i++) {
+          distort_ipfs.publish(nameAndSubgroupToTopic(group.name, randPath[i]), JSON.stringify(m));
+        }
       } catch(err) {
-        return res.send(err);
+        return console.error(err);
       }
     });
   });
@@ -266,22 +285,42 @@ distort_ipfs._dequeueMsg = function () {
 distort_ipfs._publishCert = function() {
   const self = this;
 
-  if(!self.activeGroupId) {
-    return;
-  }
+  // Find all enabled accounts matching IPFS node
+  Account
+    .find({peerId: self.peerId, enabled: true})
+    .populate('activeGroup')
+    .populate('cert')
+    .exec(function(err, accounts) {
+      for(var i = 0; i < accounts.length; i++) {
+        const acct = accounts[i];
+
+        // Create cert for active account
+        var cert = {
+          v: PROTOCOL_VERSION,
+          fromAccount: acct.accountName,
+          key: {
+            encrypt: {
+              pub: acct.cert.key.encrypt.pub
+            },
+            sign: {
+              pub: acct.cert.key.sign.pub
+            }
+          },
+          expiration: acct.cert.lastExpiration,
+          groups: acct.cert.groups
+        };
+
+        // Publish message to IPFS
+        try {
+          distort_ipfs.publish(acct.activeGroup.name + "-cert", JSON.stringify(cert));
+        } catch(err) {
+          return console.error(err);
+        }
+      }
+  });
 
   /* Safe removal of loop */
   // return clearInterval(self.certIntervalId);
-}
-
-function nameAndSubgroupToTopic(name, subgroupIndex) {
-  if(subgroupIndex > 0) {
-    name += '-' + subgroupIndex;
-  } else {
-    name += '-all';
-  }
-
-  return name;
 }
 
 // Receive message logic
@@ -398,12 +437,7 @@ function certificateMessageHandler(cert) {
     console.log('Message from: ' + cert.from);
   }
 
-  // TODO: Modify so server can send Certs to itself for separate accounts
-  if(msg.from == distort_ipfs.peerId) {
-    return;
-  }
-
-  var from = cert.from;
+  const from = cert.from;
   try {
     cert = JSON.parse(cert.data);
     if(!cert.v) {
@@ -419,12 +453,8 @@ function certificateMessageHandler(cert) {
     return;
   }
 
-  if(cert.account && cert.account !== "root") {
-    from += ":" + cert.account;
-  }
-
   // Check if key already exists to be updated
-  Cert.findOne({peerId: from, "key.encrypt.pub": cert.key.encrypt.pub, "key.sign.pub": cert.key.sign.pub, status: "valid"}, function(err, existingCert) {
+  Cert.findOne({peerId: from, accountName: cert.fromAccount, "key.encrypt.pub": cert.key.encrypt.pub, "key.sign.pub": cert.key.sign.pub, status: "valid"}, function(err, existingCert) {
     if(err) {
       throw console.error(err);
     }
@@ -433,18 +463,18 @@ function certificateMessageHandler(cert) {
     if(existingCert) {
       existingCert.lastExpiration = cert.lastExpiration;
       existingCert.groups = cert.groups;
-      existingCert.save(function(err, cert) {
+      existingCert.save(function(err, savedCert) {
         if(err) {
           return console.error(err);
         }
 
         if(DEBUG) {
-          console.log("Updated key for peer: " + from);
+          console.log("Updated key for peer: " + from + ":" + cert.fromAccount);
         };
       });
     } else {
       // Invalidate any other certs for this peer
-      Cert.update({peerId: from, status: 'valid'}, {$set: {status: 'invalidated'}}, function(err, updatedCount) {
+      Cert.update({peerId: from, accountName: cert.fromAccount, status: 'valid'}, {$set: {status: 'invalidated'}}, function(err, updatedCount) {
         if(err) {
           throw console.error(err);
         }
@@ -454,30 +484,31 @@ function certificateMessageHandler(cert) {
 
         // Create new certificate from the message
         var newCert = new Cert({
+          accountName: cert.fromAccount,
           key: cert.key,
-          lastExpiration: cert,
+          lastExpiration: cert.expiration,
           peerId: from,
           groups: cert.groups
         });
 
         // Save certificate
-        newCert.save(function(err, cert) {
+        newCert.save(function(err, savedCert) {
           if(err) {
             return console.error(err);
           }
 
           if(DEBUG) {
-            console.log("Imported new key for peer: " + from);
+            console.log("Imported new key for peer: " + from + ":" + cert.fromAccount);
           }
         });
       });
     }
   });
 };
-distort_ipfs.subscribe = function(topic, subgroupIndex) {
+distort_ipfs.subscribe = function(name, subgroupIndex) {
   subgroupIndex = parseInt(subgroupIndex);
-  const topicCerts = topic + '-certs';
-  topic = nameAndSubgroupToTopic(topic, subgroupIndex);
+  const topicCerts = name + '-certs';
+  topic = nameAndSubgroupToTopic(name, subgroupIndex);
 
   this.ipfsNode.pubsub.subscribe(topic, subscribeMessageHandler, {discover: true}, err => {
     if(err) {

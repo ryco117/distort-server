@@ -12,14 +12,14 @@ var mongoose = require('mongoose'),
 const DEBUG = true;
 
 // Ensure the correct active Group-ID in DB
-function updateActiveGroupId(peerId, groupId, accountName) {
+function updateActiveGroup(peerId, groupId, accountName) {
   Account.findOne({'peerId': peerId, 'accountName': accountName || 'root'}, function(err, account) {
     if(err) {
       throw err;
     }
 
-    if(account.activeGroupId != groupId) {
-      account.activeGroupId = groupId;
+    if(account.activeGroup != groupId) {
+      account.activeGroup = groupId;
       account.save();
     }
   });
@@ -74,7 +74,40 @@ exports.addGroup = function(req, res) {
         res.status(500);
         return res.send(err);
       }
-      res.json(group);
+
+      // If none active, set new group to be active group
+      Account
+        .findOne({peerId: req.headers.peerid, accountName: req.headers.accountname})
+        .select('activeGroup cert')
+        .exec(function(err, acct) {
+        if(err) {
+          res.status(500);
+          return res.send(err);
+        }
+
+        if(!acct.activeGroup) {
+          acct.activeGroup = group._id;
+          acct.save();
+        }
+
+        // Include group in certificate
+        Cert.findById(acct.cert, function(err, cert) {
+          if(err) {
+            res.status(500);
+            return res.send(err);
+          }
+          cert.groups.push(group.name + ":" + group.subgroupIndex);
+          cert.save(function(err) {
+            if(err) {
+              res.status(500);
+              return res.send(err);
+            }
+
+            // Succeeded all the trials, group is fully added
+            res.json(group);
+          });
+        });
+      });
     });
   });
 };
@@ -161,7 +194,7 @@ exports.postMessage = function(req, res) {
     }).then(function(toCertId) {
       // If posting to this account and group soon, assume it to be the active group
       try {
-        updateActiveGroupId(req.headers.peerid, group._id, req.headers.accountname);
+        updateActiveGroup(req.headers.peerid, group._id, req.headers.accountname);
       } catch(err) {
         res.status(500);
         return res.send(err);
@@ -208,7 +241,37 @@ exports.leaveGroup = function(req, res) {
       } catch(err) {
         console.log(err);
       }
-      res.json({message: 'Successfully left group: ' + req.params.groupName});
+
+      // Include group in certificate
+      Account
+        .findOne({peerId: req.headers.peerid, accountName: req.headers.accountname})
+        .select('cert')
+        .exec(function(err, acct) {
+        if(err) {
+          res.status(500);
+          return res.send(err);
+        }
+        Cert.findById(acct.cert, function(err, cert) {
+          if(err) {
+            res.status(500);
+            return res.send(err);
+          }
+
+          const couple = group.name + ":" + group.subgroupIndex;
+          for(var i = 0; i < cert.groups.length; i++) {
+            if(couple === cert.groups[i]) {
+              cert.groups.splice(i, 1);
+            }
+          }
+          cert.save(function(err) {
+            if(err) {
+              res.status(500);
+              return res.send(err);
+            }
+            res.json({message: 'Successfully left group: ' + req.params.groupName});
+          });
+        });
+      })
     });
   });
 };
@@ -256,4 +319,21 @@ exports.readMessagesInRange = function(req, res) {
       });
     });
   })
+};
+
+
+// Retrieve account information
+exports.fetchAccount = function(req, res) {
+  Account
+    .findOne({peerId: req.headers.peerid, accountName: req.headers.accountname})
+    .populate({path: 'activeGroup', select: 'name subgroupIndex height lastReadIndex'})
+    .select('accountName activeGroup enabled peerId')
+    .exec(function(err, acct) {
+    if(err) {
+      res.status(500);
+      return res.send(err);
+    }
+
+    res.json(acct);
+  });
 };

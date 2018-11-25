@@ -45,6 +45,6 @@ var CertSchema = new Schema({
 
 // Peer cannot have multiple certs of the same public/private key values.
 // Must either update old key times or add a new key and invalidate the old
-CertSchema.index({peerId: 1, key: 1}, {unique: true});
+CertSchema.index({accountName: 1, peerId: 1, key: 1}, {unique: true});
 
 module.exports = mongoose.model('Certs', CertSchema);
