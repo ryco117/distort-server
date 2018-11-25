@@ -1,8 +1,9 @@
 {
   "debug": true,
   "port": 6945,
-  "ipfsNode" :{
+  "ipfsNode": {
     "port": "5001",
     "address": "192.168.0.104"
-  }
+  },
+  "messageLength": 1023
 }

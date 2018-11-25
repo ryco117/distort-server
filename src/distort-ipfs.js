@@ -17,6 +17,7 @@ const MINUTES_PER_HOUR = 60;
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;
 const PARANOIA = 8;
+const MESSAGE_LENGTH = config.messageLength;
 const PROTOCOL_VERSION = "0.1.0";
 const SUPPORTED_PROTOCOLS = [PROTOCOL_VERSION];
 
@@ -54,13 +55,13 @@ distort_ipfs.initIpfs = function(address, port) {
 
         // Password creation for new account
         new Promise(function(resolve, reject) {
-          return prompt('Password (empty for random string): ', {method: 'hide'}).then(function(password) {
+          return prompt('Password (empty for random string): ', {method: "mask"}).then(function(password) {
             if(!password) {
               var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(6));
               console.log('Password (write this down for remote sign-in): ' + autoPassword);
               resolve(sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000)));
             } else {
-              prompt('Repeat Password: ', {method: 'hide'}).then(function(passwordR) {
+              prompt('Repeat Password: ', {method: "mask"}).then(function(passwordR) {
                 if(password !== passwordR) {
                    return reject(new Error('Passwords do not match, account creation aborted'));
                 }
@@ -172,13 +173,32 @@ function hasGroupInPath(path, groups) {
 }
 
 function packageMessage(msg) {
-  // TODO: Implement encryption, padding, and signing function to package message
+  // Implement encryption, padding, and signing function to package message
   var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
+  var tmpKeyPoint = e.publicKey.get();
+  msg.encrypt = sjcl.codec.hex.fromBits(tmpKeyPoint.x) + ":" + sjcl.codec.hex.fromBits(tmpKeyPoint.y);
 
-  // var sharedKey = e.secretKey.dh(msg.to.key.encrypt.pub);
-  // msg.key = e.publicKey.get()
+  // If sending real message
+  if(m.to) {
+    var paddingSize = parseInt((MESSAGE_LENGTH - msg.message.length - 11)/8);
+    var padding = sjcl.codec.base64.fromBits(sjcl.random.randomWords(paddingSize));
+    msg.message = JSON.stringify({m:msg.message,p:padding});
+  }
+  if(msg.message.length > MESSAGE_LENGTH || MESSAGE_LENGTH - msg.message.length >= 16) {
+    throw new Error("Invalid message length: " + msg.message.length + " for message: " + msg.message);
+  }
+
+  // Prepare shared AES key
+  var pointStrings = msg.to.key.encrypt.pub.split(':');
+  var pubPoint = sjcl.ecc.point(secp256k1, sjcl.bn(pointStrings[0]), sjcl.bn(pointStrings[1]));
+  var pubKey = sjcl.ecc.elGamal.publicKey(secp256k1, pubPoint);
+  var sharedAes = new sjcl.cipher.aes(e.secretKey.dh(pubKey));
+
+  // Encrypt text with key and convert to Base64
+  msg.cipher = sjcl.codec.base64.fromBits(sharedAes.encrypt(sjcl.codec.utf8String.toBits(msg.message)));
 
   delete msg.to;
+  delete msg.message;
   return msg;
 }
 
@@ -214,7 +234,7 @@ distort_ipfs._dequeueMsg = function () {
         console.log('Queried messages: ' + JSON.stringify(msgs));
       }
 
-      var m = {v: PROTOCOL_VERSION, account: group.accountName};
+      var m = {v: PROTOCOL_VERSION, fromAccount: group.accountName};
       for(var i = 0; i < msgs.length; i++) {
         if(hasGroupInPath(randPath, msgs[i].to.groups)) {
           m.message = msgs[i].message;
@@ -223,9 +243,11 @@ distort_ipfs._dequeueMsg = function () {
         }
       }
       if(!m) {
-        m.message = sjcl.codec.base64.fromBits(sjcl.random.randomWords(192))    // 192 words -> 768 bytes -> 1024 printable chars
+        m.message = sjcl.codec.base64.fromBits(sjcl.random.randomWords(MESSAGE_LENGTH/16 * 3));
       }
       m = packageMessage(m);
+
+      // TODO: Sign ciphertext using accounts signing key
 
       // Publish message to IPFS
       try {
@@ -269,10 +291,6 @@ function subscribeMessageHandler(msg) {
     console.log('Message from: ' + msg.from);
   }
 
-  // TODO: Modify so server can send message to itself for separate accounts
-  if(msg.from == distort_ipfs.peerId) {
-    return;
-  }
   if(!distort_ipfs.peerId) {
     throw new Error('Cannot handle received messages without an active account');
   }
@@ -294,38 +312,83 @@ function subscribeMessageHandler(msg) {
     return;
   }
 
-  // TODO: Decrypt message here to check belongs to us, and perform verification as necessary
+  // Find all certs that match the current IPFS node that have not expired
+  Cert
+    .find({peerId: distort_ipfs.peerId, })
+    .where('lastExpiration').gt(Date.now())
+    .exec(function(err, certs) {
 
-  // Find group to save message to
-  var groupPattern = /^(.*)-(all|\d+)$/;
-  if(!groupPattern.test(fromGroup)) {
-    throw new Error("Received message on improper group: " + fromGroup);
-  }
-  var groupName = groupPattern.exec(fromGroup)[1];
-  var groupIndex = groupPattern.exec(fromGroup)[2];
-  groupIndex = (groupIndex==="all") ? 0 : parseInt(groupIndex);
+    // Get public key for elGamal
+    var tmpKey = msg.encrypt.split(':');
+    tmpKey = sjcl.ecc.point(secp256k1, sjcl.bn(tmpKey[0]), sjcl.bn(tmpKey[1]));
+    tmpKey = sjcl.ecc.elGamal.publicKey(secp256k1, tmpKey);
 
-  // Save message to DB
-  Group.findOne({peerId: distort_ipfs.peerId, accountName: 'root', name: groupName, subgroupIndex: groupIndex}, function(err, group) {
-    if(!group) {
-      throw new Error('Could not find a subscribed group in: ' + JSON.stringify(msg.topicIDs));
+    // Determine if any accounts can decrypt message
+    var cert = null;
+    var plaintext;
+    for(var i = 0; i < certs.length; i++) {
+      // Get shared key using ephereal ECC and secret key from account-certificate
+      var e = sjcl.bn(certs[i].key.encrypt.sec);
+      e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA, e);
+      var sharedAes = new sjcl.cipher.aes(e.secretKey.dh(tmpKey));
+
+      // Decrypt message here to check belongs to us
+      try {
+        plaintext = sjcl.codec.utf8String.fromBits(sharedAes.decrypt(sjcl.codec.base64.toBits(msg.cipher)));
+        plaintext = JSON.parse(plaintext);
+        plaintext = plaintext.m;
+        if(typeof plaintext !== "string") {
+          throw new Error('Failed to decrypt');
+        }
+
+        cert = certs[i];
+        break;
+      } catch(e) {
+        if(DEBUG) {
+          console.log('Decrypt message: ' + e);
+        }
+      }
     }
-    var inMessage = new InMessage({
-      from: from,
-      groupId: group._id,
-      index: group.height++,
-      message: msg.message,
-      verified: false
-    });
-    inMessage.save(function(err, msg) {
-      if(err) {
-        throw console.error(err);
-      }
-      if(DEBUG) {
-        console.log('Saved received message to DB at index: ' + msg.index);
-      }
+    if(cert === null) {
+      return;
+    }
 
-      group.save();
+    // TODO: perform verification as necessary
+
+    // Find group to save message to
+    var groupPattern = /^(.*)-(all|\d+)$/;
+    if(!groupPattern.test(fromGroup)) {
+      throw new Error("Received message on improper group: " + fromGroup);
+    }
+    var groupName = groupPattern.exec(fromGroup)[1];
+    var groupIndex = groupPattern.exec(fromGroup)[2];
+    groupIndex = (groupIndex==="all") ? 0 : parseInt(groupIndex);
+
+    // Save message to DB
+    Group.findOne({peerId: distort_ipfs.peerId, accountName: cert.accountName, name: groupName, subgroupIndex: groupIndex}, function(err, group) {
+      if(!group) {
+        throw new Error('Could not find a subscribed group in: ' + JSON.stringify(msg.topicIDs));
+      }
+      var inMessage = new InMessage({
+        from: {
+          accountName: msg.fromAccount || 'root',
+          peerId: from
+        },
+        groupId: group._id,
+        index: group.height++,
+        message: plaintext,
+        verified: false
+      });
+      inMessage.save(function(err, msg) {
+        if(err) {
+          throw console.error(err);
+        }
+        if(DEBUG) {
+          console.log('Saved received message to DB at index: ' + msg.index);
+        }
+
+        group.save();
+      });
     });
   });
 };

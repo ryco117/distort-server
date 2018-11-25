@@ -90,7 +90,6 @@ exports.readMissedMessages = function(req, res) {
     InMessage
       .find({'groupId': group._id})
       .where('index').gt(group.lastReadIndex)
-      .populate({path: 'from', select: 'accountName peerId'})
       .sort('-index')
       .select('cipher dateReceived from index message verified')
       .exec(function(err, inMsgs) {
@@ -228,7 +227,6 @@ exports.readMessagesInRange = function(req, res) {
     InMessage
       .find({'groupId': group._id})
       .where('index').gte(indexStart).lte(indexEnd)
-      .populate({path: 'from', select: 'accountName peerId'})
       .sort('-index')
       .select('cipher dateReceived from index message verified')
       .exec(function(err, inMsgs) {
