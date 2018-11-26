@@ -18,7 +18,7 @@ const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;
 const PARANOIA = 8;
 const MESSAGE_LENGTH = config.messageLength;
-const PROTOCOL_VERSION = "0.1.0";
+const PROTOCOL_VERSION = config.protocolVersion;
 const SUPPORTED_PROTOCOLS = [PROTOCOL_VERSION];
 
 const secp256k1 = sjcl.ecc.curves.k256;
@@ -110,18 +110,28 @@ distort_ipfs.initIpfs = function(address, port) {
 
           // Create new private/public keypairs for account
           var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
+
+          // Get encryption strings
           const encSec = _fromBits(e.sec.get());
+          const encPubCouple = e.pub.get();
+          const encPub = _fromBits(encPubCouple.x) + ":" + _fromBits(encPubCouple.y);
+
+          // Get signing strings
           var s = sjcl.ecc.ecdsa.generateKeys(secp256k1, PARANOIA);
           const sigSec = _fromBits(s.sec.get());
+          const sigPubCouple = s.pub.get();
+          const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
 
           // New certificate's schema
           var newCert = new Cert({
             key: {
               encrypt: {
-                sec: encSec
+                sec: encSec,
+                pub: encPub
               },
               sign: {
-                sec: sigSec
+                sec: sigSec,
+                pub: sigPub
               }
             },
             lastExpiration: Date.now() + 14*HOURS_PER_DAY*MINUTES_PER_HOUR*SECONDS_PER_MINUTE*MS_PER_SECOND,
@@ -192,30 +202,48 @@ distort_ipfs.initIpfs = function(address, port) {
 function packageMessage(msg) {
   // Implement encryption, padding, and signing function to package message
   var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
-  var tmpKeyPoint = e.publicKey.get();
+  var tmpKeyPoint = e.pub.get();
   msg.encrypt = sjcl.codec.hex.fromBits(tmpKeyPoint.x) + ":" + sjcl.codec.hex.fromBits(tmpKeyPoint.y);
 
+  if(DEBUG) {
+    console.log("Pre-Packaged Message: " + JSON.stringify(msg));
+  }
+
+  var sharedAes;
   // If sending real message
-  if(m.to) {
+  if(msg.to) {
     var paddingSize = parseInt((MESSAGE_LENGTH - msg.message.length - 11)/8);
     var padding = sjcl.codec.base64.fromBits(sjcl.random.randomWords(paddingSize));
     msg.message = JSON.stringify({m:msg.message,p:padding});
+
+    // Prepare shared AES key
+    var pointStrings = msg.to.key.encrypt.pub.split(':');
+    var pubPoint = new sjcl.ecc.point(secp256k1, new sjcl.bn(pointStrings[0]), new sjcl.bn(pointStrings[1]));
+    var pubKey = new sjcl.ecc.elGamal.publicKey(secp256k1, pubPoint);
+    sharedAes = new sjcl.cipher.aes(e.sec.dh(pubKey));
+  } else {
+
+    // Since there is no real recipient, can use any key
+    var ephemeral = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
+    sharedAes = new sjcl.cipher.aes(e.sec.dh(ephemeral.pub));
   }
+
   if(msg.message.length > MESSAGE_LENGTH || MESSAGE_LENGTH - msg.message.length >= 16) {
     throw new Error("Invalid message length: " + msg.message.length + " for message: " + msg.message);
   }
 
-  // Prepare shared AES key
-  var pointStrings = msg.to.key.encrypt.pub.split(':');
-  var pubPoint = sjcl.ecc.point(secp256k1, sjcl.bn(pointStrings[0]), sjcl.bn(pointStrings[1]));
-  var pubKey = sjcl.ecc.elGamal.publicKey(secp256k1, pubPoint);
-  var sharedAes = new sjcl.cipher.aes(e.secretKey.dh(pubKey));
-
   // Encrypt text with key and convert to Base64
-  msg.cipher = sjcl.codec.base64.fromBits(sharedAes.encrypt(sjcl.codec.utf8String.toBits(msg.message)));
+  var iv = sjcl.random.randomWords(4);
+  msg.iv = sjcl.codec.base64.fromBits(iv);
+  msg.cipher = sjcl.codec.base64.fromBits(sjcl.mode.ccm.encrypt(sharedAes, sjcl.codec.utf8String.toBits(msg.message), iv));
 
+  // Delete private fields
   delete msg.to;
   delete msg.message;
+
+  if(DEBUG) {
+    console.log("Packaged Message: " + JSON.stringify(msg));
+  }
   return msg;
 }
 
@@ -259,7 +287,7 @@ distort_ipfs._dequeueMsg = function () {
           break;
         }
       }
-      if(!m) {
+      if(!m.message) {
         m.message = sjcl.codec.base64.fromBits(sjcl.random.randomWords(MESSAGE_LENGTH/16 * 3));
       }
       m = packageMessage(m);
@@ -359,21 +387,22 @@ function subscribeMessageHandler(msg) {
 
     // Get public key for elGamal
     var tmpKey = msg.encrypt.split(':');
-    tmpKey = sjcl.ecc.point(secp256k1, sjcl.bn(tmpKey[0]), sjcl.bn(tmpKey[1]));
-    tmpKey = sjcl.ecc.elGamal.publicKey(secp256k1, tmpKey);
+    tmpKey = new sjcl.ecc.point(secp256k1, new sjcl.bn(tmpKey[0]), new sjcl.bn(tmpKey[1]));
+    tmpKey = new sjcl.ecc.elGamal.publicKey(secp256k1, tmpKey);
 
     // Determine if any accounts can decrypt message
     var cert = null;
     var plaintext;
     for(var i = 0; i < certs.length; i++) {
       // Get shared key using ephereal ECC and secret key from account-certificate
-      var e = sjcl.bn(certs[i].key.encrypt.sec);
+      var e = new sjcl.bn(certs[i].key.encrypt.sec);
       e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA, e);
-      var sharedAes = new sjcl.cipher.aes(e.secretKey.dh(tmpKey));
+      var sharedAes = new sjcl.cipher.aes(e.sec.dh(tmpKey));
 
       // Decrypt message here to check belongs to us
       try {
-        plaintext = sjcl.codec.utf8String.fromBits(sharedAes.decrypt(sjcl.codec.base64.toBits(msg.cipher)));
+        const iv = sjcl.codec.base64.toBits(msg.iv);
+        plaintext = sjcl.codec.utf8String.fromBits(sjcl.mode.ccm.decrypt(sharedAes, sjcl.codec.base64.toBits(msg.cipher), iv));
         plaintext = JSON.parse(plaintext);
         plaintext = plaintext.m;
         if(typeof plaintext !== "string") {
@@ -384,7 +413,7 @@ function subscribeMessageHandler(msg) {
         break;
       } catch(e) {
         if(DEBUG) {
-          console.log('Decrypt message: ' + e);
+          console.log('Failed to decrypt: ' + e);
         }
       }
     }

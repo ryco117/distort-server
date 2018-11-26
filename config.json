@@ -5,5 +5,6 @@
     "port": "5001",
     "address": "192.168.0.104"
   },
-  "messageLength": 1023
+  "messageLength": 1023,
+  "protocolVersion": "0.1.0"
 }
