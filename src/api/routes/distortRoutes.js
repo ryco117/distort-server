@@ -16,6 +16,8 @@ module.exports = function(app) {
   // Fetch messages from a group in given range
   app.route('/groups/:groupName/:indexStart/:indexEnd')
     .get(distort.readMessagesInRange);
+  app.route('/groups/:groupName/:indexStart')
+    .get(distort.readMessagesInRange);
 
   // Manage accounts
   app.route('/account')
