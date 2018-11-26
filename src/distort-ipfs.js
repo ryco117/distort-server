@@ -205,16 +205,18 @@ function packageMessage(msg) {
   var tmpKeyPoint = e.pub.get();
   msg.encrypt = sjcl.codec.hex.fromBits(tmpKeyPoint.x) + ":" + sjcl.codec.hex.fromBits(tmpKeyPoint.y);
 
-  if(DEBUG) {
-    console.log("Pre-Packaged Message: " + JSON.stringify(msg));
-  }
-
   var sharedAes;
   // If sending real message
   if(msg.to) {
-    var paddingSize = parseInt((MESSAGE_LENGTH - msg.message.length - 11)/8);
-    var padding = sjcl.codec.base64.fromBits(sjcl.random.randomWords(paddingSize));
-    msg.message = JSON.stringify({m:msg.message,p:padding});
+    // Pad message to size
+    var paddingSize = parseInt((MESSAGE_LENGTH - msg.message.length - 15)/8);
+    var padding = sjcl.codec.hex.fromBits(sjcl.random.randomWords(paddingSize));
+    while(padding.length + msg.message.length + 15 < MESSAGE_LENGTH) {
+      padding += "a";
+    }
+
+    // Create message
+    msg.message = JSON.stringify({'m':msg.message,'p':padding});      // 15 extra characters are added when stringified
 
     // Prepare shared AES key
     var pointStrings = msg.to.key.encrypt.pub.split(':');
@@ -222,14 +224,16 @@ function packageMessage(msg) {
     var pubKey = new sjcl.ecc.elGamal.publicKey(secp256k1, pubPoint);
     sharedAes = new sjcl.cipher.aes(e.sec.dh(pubKey));
   } else {
+    // Generate bogus message
+    msg.message = sjcl.codec.hex.fromBits(sjcl.random.randomWords(parseInt(MESSAGE_LENGTH/8)));
 
     // Since there is no real recipient, can use any key
     var ephemeral = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
     sharedAes = new sjcl.cipher.aes(e.sec.dh(ephemeral.pub));
   }
 
-  if(msg.message.length > MESSAGE_LENGTH || MESSAGE_LENGTH - msg.message.length >= 16) {
-    throw new Error("Invalid message length: " + msg.message.length + " for message: " + msg.message);
+  if(msg.message.length !== MESSAGE_LENGTH) {
+    throw new Error("Invalid message length: " + msg.message.length + " for message: " + msg.message + "(Ensure messageLength in configuration is divisiblle by 8)");
   }
 
   // Encrypt text with key and convert to Base64
@@ -280,15 +284,14 @@ distort_ipfs._dequeueMsg = function () {
       }
 
       var m = {v: PROTOCOL_VERSION, fromAccount: group.accountName};
+      var index = undefined;
       for(var i = 0; i < msgs.length; i++) {
         if(hasGroupInPath(group.name, randPath, msgs[i].to.groups)) {
           m.message = msgs[i].message;
           m.to = msgs[i].to;
+          index = i;
           break;
         }
-      }
-      if(!m.message) {
-        m.message = sjcl.codec.base64.fromBits(sjcl.random.randomWords(MESSAGE_LENGTH/16 * 3));
       }
       m = packageMessage(m);
 
@@ -296,8 +299,11 @@ distort_ipfs._dequeueMsg = function () {
 
       // Publish message to IPFS
       try {
-        for(var i = 0; i < randPath.length; i++) {
-          distort_ipfs.publish(nameAndSubgroupToTopic(group.name, randPath[i]), JSON.stringify(m));
+        distort_ipfs.publishToSubgroups(group.name, randPath, JSON.stringify(m));
+        if(index !== undefined) {
+
+          msgs[index].status = 'sent';
+          msgs[index].save();
         }
       } catch(err) {
         return console.error(err);
@@ -337,6 +343,10 @@ distort_ipfs._publishCert = function() {
           expiration: acct.cert.lastExpiration,
           groups: acct.cert.groups
         };
+
+        if(DEBUG) {
+          console.log("Packaged Certificate: " + JSON.stringify(cert));
+        }
 
         // Publish message to IPFS
         try {
@@ -419,6 +429,11 @@ function subscribeMessageHandler(msg) {
     }
     if(cert === null) {
       return;
+    }
+
+    // Received message!
+    if(DEBUG) {
+      console.log('Received message: ' + plaintext);
     }
 
     // TODO: perform verification as necessary
@@ -576,12 +591,18 @@ distort_ipfs.unsubscribe = function(topic, subgroupIndex) {
 distort_ipfs.publish = function(topic, msg) {
   this.ipfsNode.pubsub.publish(topic, Buffer.from(msg), err => {
     if(err) {
-      throw console.error('Failed to publish to: ' + topic, err);
+      throw new Error('Failed to publish to: ' + topic, err);
     }
     if(DEBUG) {
-      console.log('Published: ' + msg + ' to: ' + topic);
+      console.log('Published to: ' + topic);
     }
   });
+};
+
+distort_ipfs.publishToSubgroups = function(groupName, subgroups, msg) {
+  for(var i = 0; i < subgroups.length; i++) {
+    this.publish(nameAndSubgroupToTopic(groupName, subgroups[i]), msg);
+  }
 };
 
 module.exports = distort_ipfs;

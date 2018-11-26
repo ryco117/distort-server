@@ -34,7 +34,7 @@ exports.authenticate = function(req, res, next) {
 
   // Ensure they are attempting to access the correct IPFS identity (ie. they are aware of their own online identity)
   if(peerId !== distort_ipfs.peerId) {
-    res.status(400);
+    res.status(403);
     return res.send(new Error('Attempting to login as IPFS identity: "' + peerId + '" server connected as: "' + distort_ipfs.peerId + '"'));
   }
 
@@ -52,7 +52,7 @@ exports.authenticate = function(req, res, next) {
         console.log('Tried to authenticate as: ' + peerId + ' with token-hash: ' + calcHash + ' , expecting: ' + account.tokenHash);
       }
       res.status(401);
-      return res.send('Could not authenticate user as peer: ' + peerId);
+      return res.send('Could not authenticate user as peer: ' + peerId + ":" + accountName);
     }
 
     account.lastInteraction = Date.now();

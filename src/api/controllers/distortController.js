@@ -2,6 +2,7 @@
 
 var mongoose = require('mongoose'),
   distort_ipfs = require('../../distort-ipfs'),
+  config = require('../../config'),
   Account = mongoose.model('Accounts'),
   Cert = mongoose.model('Certs'),
   Group = mongoose.model('Groups'),
@@ -9,7 +10,7 @@ var mongoose = require('mongoose'),
   OutMessage = mongoose.model('OutMessages'),
   Peer = mongoose.model('Peers');
 
-const DEBUG = true;
+const DEBUG = config.debug;
 
 // Ensure the correct active Group-ID in DB
 function updateActiveGroup(peerId, groupId, accountName) {
@@ -163,16 +164,16 @@ exports.postMessage = function(req, res) {
     }
 
     // Must include a 'to' object
-    if(!req.body.to) {
+    if(!req.body.toPeerId && !req.body.toNickname) {
       res.status(400);
-      return res.send('Must include a "to" object in request');
+      return res.send('Must include "toPeerId" or "toNickname" in request');
     }
 
     // Determine if we have the certificate of the intended peer
     var certPromise = new Promise(function(resolve, reject) {
       // Can specify peer by friendly nickname or explicit peer-ID
-      if(req.body.to.peerId) {
-        Cert.findOne({accountName: req.body.to.accountName || 'root', peerId: req.body.to.peerId, status: 'valid'}, function(err, cert) {
+      if(req.body.toPeerId) {
+        Cert.findOne({accountName: req.body.toAccountName || 'root', peerId: req.body.toPeerId, status: 'valid'}, function(err, cert) {
           if(err) {
             reject('Could not find cert for peer-ID: ' + err);
           } else {
@@ -180,7 +181,7 @@ exports.postMessage = function(req, res) {
           }
         });
       } else {
-        Peer.findOne({nickname: req.body.to.nickname}, function(err, peer) {
+        Peer.findOne({nickname: req.body.toNickname}, function(err, peer) {
           if(err) {
             reject('Could not find cert for nickname: ' + err);
           } else {
