@@ -17,7 +17,7 @@ const MINUTES_PER_HOUR = 60;
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;
 const PARANOIA = 8;
-const MESSAGE_LENGTH = config.messageLength;
+const MESSAGE_LENGTH = 1024;  // Should not be configurable, but a constant of the protocol
 const PROTOCOL_VERSION = config.protocolVersion;
 const SUPPORTED_PROTOCOLS = [PROTOCOL_VERSION];
 
@@ -47,6 +47,10 @@ function nameAndSubgroupToTopic(name, subgroupIndex) {
 
   return name;
 }
+function nameToCertTopic(name) {
+  return name + '-certs';
+}
+
 // Simple helper to determine if non-empty intersection of arrays
 function hasGroupInPath(groupName, path, groups) {
   for(var i = 0; i < path.length; i++) {
@@ -328,32 +332,39 @@ distort_ipfs._publishCert = function() {
       for(var i = 0; i < accounts.length; i++) {
         const acct = accounts[i];
 
-        // Create cert for active account
-        var cert = {
-          v: PROTOCOL_VERSION,
-          fromAccount: acct.accountName,
-          key: {
-            encrypt: {
-              pub: acct.cert.key.encrypt.pub
+        acct.cert.lastExpiration = Date.now() + 14*HOURS_PER_DAY*MINUTES_PER_HOUR*SECONDS_PER_MINUTE*MS_PER_SECOND;
+        acct.cert.save(function(err) {
+          if(err) {
+            console.error('Could not save updated cert expiration: ' + err);
+          }
+
+          // Create cert for active account
+          var cert = {
+            v: PROTOCOL_VERSION,
+            fromAccount: acct.accountName,
+            key: {
+              encrypt: {
+                pub: acct.cert.key.encrypt.pub
+              },
+              sign: {
+                pub: acct.cert.key.sign.pub
+              }
             },
-            sign: {
-              pub: acct.cert.key.sign.pub
-            }
-          },
-          expiration: acct.cert.lastExpiration,
-          groups: acct.cert.groups
-        };
+            expiration: acct.cert.lastExpiration,
+            groups: acct.cert.groups
+          };
 
-        if(DEBUG) {
-          console.log("Packaged Certificate: " + JSON.stringify(cert));
-        }
+          if(DEBUG) {
+            console.log("Packaged Certificate: " + JSON.stringify(cert));
+          }
 
-        // Publish message to IPFS
-        try {
-          distort_ipfs.publish(acct.activeGroup.name + "-cert", JSON.stringify(cert));
-        } catch(err) {
-          return console.error(err);
-        }
+          // Publish message to IPFS
+          try {
+            distort_ipfs.publish(nameToCertTopic(acct.activeGroup.name), JSON.stringify(cert));
+          } catch(err) {
+            return console.error(err);
+          }
+        });
       }
   });
 
@@ -503,9 +514,17 @@ function certificateMessageHandler(cert) {
       throw console.error(err);
     }
 
+    // Check if we have secret keys for cert (implying we own cert and thus it does not need updating)
+    if(existingCert.key.encrypt.sec) {
+      if(DEBUG) {
+        console.log('This server owns certificate, no action needed');
+      }
+      return;
+    }
+
     // If cert exists, update
     if(existingCert) {
-      existingCert.lastExpiration = cert.lastExpiration;
+      existingCert.lastExpiration = cert.expiration;
       existingCert.groups = cert.groups;
       existingCert.save(function(err, savedCert) {
         if(err) {
@@ -551,7 +570,7 @@ function certificateMessageHandler(cert) {
 };
 distort_ipfs.subscribe = function(name, subgroupIndex) {
   subgroupIndex = parseInt(subgroupIndex);
-  const topicCerts = name + '-certs';
+  const topicCerts = nameToCertTopic(name);
   topic = nameAndSubgroupToTopic(name, subgroupIndex);
 
   this.ipfsNode.pubsub.subscribe(topic, subscribeMessageHandler, {discover: true}, err => {
@@ -570,7 +589,7 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
 };
 distort_ipfs.unsubscribe = function(topic, subgroupIndex) {
   subgroupIndex = parseInt(subgroupIndex);
-  const topicCerts = topic + '-certs';
+  const topicCerts = nameToCertTopic(topic);
   topic = nameAndSubgroupToTopic(topic, subgroupIndex);
 
   this.ipfsNode.pubsub.unsubscribe(topic, subscribeMessageHandler, err => {

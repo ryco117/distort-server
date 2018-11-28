@@ -166,7 +166,13 @@ exports.postMessage = function(req, res) {
     // Must include a 'to' object
     if(!req.body.toPeerId && !req.body.toNickname) {
       res.status(400);
-      return res.send('Must include "toPeerId" or "toNickname" in request');
+      return res.send('Must include "toPeerId" or "toNickname" in request body');
+    }
+
+    // Must include a non-empty message
+    if(!req.body.message || typeof req.body.message !== "string") {
+      res.status(400);
+      return res.send('Must include a non-empty string "message" in request body');
     }
 
     // Determine if we have the certificate of the intended peer
@@ -216,8 +222,15 @@ exports.postMessage = function(req, res) {
           console.log('Saved enqueued message to DB at index: ' + msg.index);
         }
 
-        group.save();
-        res.json({message: 'Enqueued: ' + msg.message});
+        group.save(function(err) {
+          if(err) {
+            res.status(500);
+            return res.send(err);
+          }
+
+          // Only send success after all transactions succeed
+          res.json(msg);
+        });
       });
     });
   });

@@ -7,5 +7,4 @@ const config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
 exports.debug = config.debug;
 exports.port = config.port;
 exports.ipfsNode = config.ipfsNode;
-exports.messageLength = config.messageLength;
 exports.protocolVersion = config.protocolVersion;
