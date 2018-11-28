@@ -19,10 +19,10 @@
     "browserify": "^16.2.3",
     "express": "^4.16.4",
     "ipfs-api": "^25.0.0",
-    "mongoose": "^5.3.4",
+    "mongoose": "^5.3.13",
     "password-prompt": "^1.0.7"
   },
   "devDependencies": {
-    "nodemon": "^1.18.4"
+    "nodemon": "^1.18.6"
   }
 }

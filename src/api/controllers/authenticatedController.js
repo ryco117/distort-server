@@ -41,7 +41,12 @@ exports.authenticate = function(req, res, next) {
   // Verify account exists and hash of account is correct
   Account.findOne({'accountName': accountName, 'peerId': peerId}, function(err, account) {
     if(err) {
+      res.status(500);
       return res.send(err);
+    }
+    if(!account) {
+      res.status(401);
+      return res.send('No such account: ' + peerId + ":" + accountName);
     }
 
     const _fromBits = sjcl.codec.base64.fromBits;
