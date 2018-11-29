@@ -24,4 +24,9 @@ module.exports = function(app) {
     .get(distort.fetchAccount);
     //.post()
     //.delete()
+
+  app.route('/peers')
+    .get(distort.fetchPeers)
+    .post(distort.addPeer)
+    .delete(distort.removePeer);
 };

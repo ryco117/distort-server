@@ -237,7 +237,7 @@ function packageMessage(msg) {
   }
 
   if(msg.message.length !== MESSAGE_LENGTH) {
-    throw new Error("Invalid message length: " + msg.message.length + " for message: " + msg.message + "(Ensure messageLength in configuration is divisiblle by 8)");
+    throw new Error("Invalid message length: " + msg.message.length + " for message: " + msg.message + "(Ensure MESSAGE_LENGTH is divisiblle by 8)");
   }
 
   // Encrypt text with key and convert to Base64
@@ -514,16 +514,16 @@ function certificateMessageHandler(cert) {
       throw console.error(err);
     }
 
-    // Check if we have secret keys for cert (implying we own cert and thus it does not need updating)
-    if(existingCert.key.encrypt.sec) {
-      if(DEBUG) {
-        console.log('This server owns certificate, no action needed');
-      }
-      return;
-    }
-
     // If cert exists, update
     if(existingCert) {
+      // Check if we have secret keys for cert (implying we own cert and thus it does not need updating)
+      if(existingCert.key.encrypt.sec) {
+        if(DEBUG) {
+          console.log('This server owns certificate, no action needed');
+        }
+        return;
+      }
+
       existingCert.lastExpiration = cert.expiration;
       existingCert.groups = cert.groups;
       existingCert.save(function(err, savedCert) {
@@ -563,6 +563,17 @@ function certificateMessageHandler(cert) {
           if(DEBUG) {
             console.log("Imported new key for peer: " + from + ":" + cert.fromAccount);
           }
+
+          // Update the certificate of any stored peers
+          Peer.update({peerId: from, accountName: cert.fromAccount}, {$set: {cert: savedCert._id}}, function(err, updatedCount) {
+            if(err) {
+              throw console.error(err);
+            }
+
+            if(DEBUG) {
+              console.log("Updated: " + updatedCount + " cert references for peer: " + from);
+            }
+          });
         });
       });
     }

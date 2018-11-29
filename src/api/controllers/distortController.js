@@ -26,15 +26,21 @@ function updateActiveGroup(peerId, groupId, accountName) {
   });
 }
 
+// Send error JSON
+function sendErrorJSON(res, err, statusCode) {
+  res.status(statusCode);
+  return res.json({error: err});
+}
+
 // List all (sub)group memberships through their groups and subgroup paths
 exports.listGroups = function(req, res) {
   Group.find({peerId: req.headers.peerid, accountName: req.headers.accountname})
     .select('name subgroupIndex height lastReadIndex')
     .exec(function(err, groups) {
     if(err) {
-      res.status(500);
-      return res.send(err);
+      return sendErrorJSON(res, err, 500);
     }
+
     res.json(groups);
   });
 };
@@ -43,70 +49,55 @@ exports.listGroups = function(req, res) {
 exports.addGroup = function(req, res) {
   const subI = parseInt(req.body.subgroupIndex);
   if(isNaN(subI) || subI < 0) {
-    res.status(400);
-    return res.send("subgroupIndex must be a non-negative integer");
+    return sendErrorJSON(res, "subgroupIndex must be a non-negative integer", 400);
   }
 
   var reqGroup = {};
   reqGroup.name = req.body.name;
   reqGroup.peerId = req.headers.peerid;
   reqGroup.accountName = req.headers.accountname;
-  Group.find(reqGroup, function(err, groups) {
+  Group.findOne(reqGroup, function(err, group) {
     if(err) {
-      res.status(500);
-      return res.send(err);
+      return sendErrorJSON(res, err, 500);
     }
-    if(groups.length > 0) {
-      res.status(400);
-      return res.send('This group is already subscribed to');
+
+    if(group) {
+      return sendErrorJSON(res, 'This group is already subscribed to', 400);
     }
 
     reqGroup.subgroupIndex = subI;
     try {
       distort_ipfs.subscribe(reqGroup.name, subI);
     } catch(err) {
-      res.status(500);
-      return res.send(err);
+      return sendErrorJSON(res, err, 500);
     }
 
     var newGroup = new Group(reqGroup);
     newGroup.save(function(err, group) {
       if(err) {
-        res.status(500);
-        return res.send(err);
+        return sendErrorJSON(res, err, 500);
       }
 
       // If none active, set new group to be active group
-      Account
-        .findOne({peerId: req.headers.peerid, accountName: req.headers.accountname})
-        .select('activeGroup cert')
-        .exec(function(err, acct) {
+      try {
+        updateActiveGroup(req.headers.peerid, group._id, req.headers.accountname);
+      } catch(err) {
+        return sendErrorJSON(res, err, 500);
+      }
+
+      // Include group in certificate
+      Cert.findById(acct.cert, function(err, cert) {
         if(err) {
-          res.status(500);
-          return res.send(err);
+          return sendErrorJSON(res, err, 500);
         }
-
-        if(!acct.activeGroup) {
-          acct.activeGroup = group._id;
-          acct.save();
-        }
-
-        // Include group in certificate
-        Cert.findById(acct.cert, function(err, cert) {
+        cert.groups.push(group.name + ":" + group.subgroupIndex);
+        cert.save(function(err) {
           if(err) {
-            res.status(500);
-            return res.send(err);
+            return sendErrorJSON(res, err, 500);
           }
-          cert.groups.push(group.name + ":" + group.subgroupIndex);
-          cert.save(function(err) {
-            if(err) {
-              res.status(500);
-              return res.send(err);
-            }
 
-            // Succeeded all the trials, group is fully added
-            res.json(group);
-          });
+          // Succeeded all the trials, group is fully added
+          res.json(group);
         });
       });
     });
@@ -117,8 +108,7 @@ exports.addGroup = function(req, res) {
 exports.readMissedMessages = function(req, res) {
   Group.findOne({name: req.params.groupName, peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, group) {
     if(!group) {
-      res.status(400);
-      return res.send('Authorized account is not a member of group: ' + req.params.groupName);
+      return sendErrorJSON(res, 'Authorized account is not a member of group: ' + req.params.groupName, 400);
     }
 
     InMessage
@@ -127,11 +117,10 @@ exports.readMissedMessages = function(req, res) {
       .sort('-index')
       .select('cipher dateReceived from index message verified')
       .exec(function(err, inMsgs) {
-
       if(err) {
-        res.status(500);
-        return res.send(err);
+        return sendErrorJSON(res, err, 500);
       }
+
       OutMessage
         .find({'groupId': group._id})
         .where('index').gt(group.lastReadIndex)
@@ -139,10 +128,8 @@ exports.readMissedMessages = function(req, res) {
         .sort('-index')
         .select('index lastStatusChange message status to')
         .exec(function(err, outMsgs) {
-
         if(err) {
-          res.status(500);
-          return res.send(err);
+          return sendErrorJSON(res, err, 500);
         }
 
         // Update last read message
@@ -158,21 +145,22 @@ exports.readMissedMessages = function(req, res) {
 // Enqueue a message to the specified group
 exports.postMessage = function(req, res) {
   Group.findOne({name: req.params.groupName, peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, group) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+
     if(!group) {
-      res.status(400);
-      return res.send('Authorized account is not a member of group: ' + req.params.groupName);
+      return sendErrorJSON(res, 'Authorized account is not a member of group: ' + req.params.groupName, 400);
     }
 
     // Must include a 'to' object
     if(!req.body.toPeerId && !req.body.toNickname) {
-      res.status(400);
-      return res.send('Must include "toPeerId" or "toNickname" in request body');
+      return sendErrorJSON(res, 'Must include "toPeerId" or "toNickname" in request body', 400);
     }
 
     // Must include a non-empty message
     if(!req.body.message || typeof req.body.message !== "string") {
-      res.status(400);
-      return res.send('Must include a non-empty string "message" in request body');
+      return sendErrorJSON(res, 'Must include a non-empty string "message" in request body', 400);
     }
 
     // Determine if we have the certificate of the intended peer
@@ -187,24 +175,28 @@ exports.postMessage = function(req, res) {
           }
         });
       } else {
-        Peer.findOne({nickname: req.body.toNickname}, function(err, peer) {
+        Account.findOne({peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, account) {
           if(err) {
-            reject('Could not find cert for nickname: ' + err);
-          } else {
-            resolve(peer.cert);
+            return sendErrorJSON(res, err, 500);
           }
+
+          Peer.findOne({owner: account._id, nickname: req.body.toNickname}, function(err, peer) {
+            if(err) {
+              reject('Could not find cert for nickname: ' + err);
+            } else {
+              resolve(peer.cert);
+            }
+          });
         });
       }
     }).catch(function(err) {
-      res.status(400);
-      return res.send(err);
+      return sendErrorJSON(res, err, 400);
     }).then(function(toCertId) {
       // If posting to this account and group soon, assume it to be the active group
       try {
         updateActiveGroup(req.headers.peerid, group._id, req.headers.accountname);
       } catch(err) {
-        res.status(500);
-        return res.send(err);
+        return sendErrorJSON(res, err, 500);
       }
 
       var outMessage = new OutMessage({
@@ -215,17 +207,16 @@ exports.postMessage = function(req, res) {
       });
       outMessage.save(function(err, msg) {
         if(err) {
-          res.status(500);
-          return res.send(err);
+          return sendErrorJSON(res, err, 500);
         }
+
         if(DEBUG) {
           console.log('Saved enqueued message to DB at index: ' + msg.index);
         }
 
         group.save(function(err) {
           if(err) {
-            res.status(500);
-            return res.send(err);
+            return sendErrorJSON(res, err, 500);
           }
 
           // Only send success after all transactions succeed
@@ -239,15 +230,17 @@ exports.postMessage = function(req, res) {
 // Stop streaming on the specified group
 exports.leaveGroup = function(req, res) {
   Group.findOne({'name': req.params.groupName, 'peerId': req.headers.peerid, 'accountName': req.headers.accountname}, function(err, group) {
-    if(!group || err) {
-      res.status(400);
-      return res.send('Authorized account is not a member of group: ' + req.params.groupName);
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+
+    if(!group) {
+      return sendErrorJSON(res, 'Authorized account is not a member of group: ' + req.params.groupName, 400);
     }
 
     Group.remove({'name': req.params.groupName, 'peerId': req.headers.peerid, 'accountName': req.headers.accountname}, function(err, delStats) {
       if(err) {
-        res.status(500);
-        return res.send(err);
+        return sendErrorJSON(res, err, 500);
       }
 
       try {
@@ -262,13 +255,12 @@ exports.leaveGroup = function(req, res) {
         .select('cert')
         .exec(function(err, acct) {
         if(err) {
-          res.status(500);
-          return res.send(err);
+          return sendErrorJSON(res, err, 500);
         }
+
         Cert.findById(acct.cert, function(err, cert) {
           if(err) {
-            res.status(500);
-            return res.send(err);
+            return sendErrorJSON(res, err, 500);
           }
 
           const couple = group.name + ":" + group.subgroupIndex;
@@ -279,9 +271,9 @@ exports.leaveGroup = function(req, res) {
           }
           cert.save(function(err) {
             if(err) {
-              res.status(500);
-              return res.send(err);
+              return sendErrorJSON(res, err, 500);
             }
+
             res.json({message: 'Successfully left group: ' + req.params.groupName});
           });
         });
@@ -293,9 +285,12 @@ exports.leaveGroup = function(req, res) {
 // Retrieve messages for the specified group
 exports.readMessagesInRange = function(req, res) {
   Group.findOne({name: req.params.groupName, peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, group) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+
     if(!group) {
-      res.status(400);
-      return res.send('Authorized account is not a member of group: ' + req.params.groupName);
+      return sendErrorJSON(res, 'Authorized account is not a member of group: ' + req.params.groupName, 400);
     }
 
     const indexStart = parseInt(req.params.indexStart);
@@ -307,11 +302,10 @@ exports.readMessagesInRange = function(req, res) {
       .sort('-index')
       .select('cipher dateReceived from index message verified')
       .exec(function(err, inMsgs) {
-
       if(err) {
-        res.status(500);
-        return res.send(err);
+        return sendErrorJSON(res, err, 500);
       }
+
       OutMessage
         .find({'groupId': group._id})
         .where('index').gte(indexStart).lte(indexEnd)
@@ -319,10 +313,8 @@ exports.readMessagesInRange = function(req, res) {
         .sort('-index')
         .select('index lastStatusChange message status to')
         .exec(function(err, outMsgs) {
-
         if(err) {
-          res.status(500);
-          return res.send(err);
+          return sendErrorJSON(res, err, 500);
         }
 
         // Update last read message (if needed)
@@ -344,10 +336,117 @@ exports.fetchAccount = function(req, res) {
     .select('accountName activeGroup enabled peerId')
     .exec(function(err, acct) {
     if(err) {
-      res.status(500);
-      return res.send(err);
+      return sendErrorJSON(res, err, 500);
     }
 
     res.json(acct);
+  });
+};
+
+
+// Retrieve account peers
+exports.fetchPeers = function(req, res) {
+  Account.findOne({peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, acct) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+
+    Peer
+      .find({owner: acct._id})
+      .populate({path: 'cert', select: 'groups'})
+      .select('accountName peerId nickname cert')
+      .exec(function(err, peers) {
+      if(err) {
+        return sendErrorJSON(res, err, 500);
+      }
+
+      res.json(peers);
+    })
+  });
+};
+
+// Retrieve account peers
+exports.addPeer = function(req, res) {
+  if(!req.body.peerId) {
+    sendErrorJSON(res, "Requires IPFS-ID of peer to add", 400);
+  }
+
+  Account.findOne({peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, acct) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+
+    var newPeer = {
+      nickname: req.body.nickname,
+      owner: acct._id,
+      peerId: req.body.peerId,
+      accountName: req.body.accountName || 'root'
+    };
+
+    // Ensure account does not already exist
+    Peer.findOne({peerId: newPeer.peerId, accountName: newPeer.accountName, owner: newPeer.owner}, function(err, peer) {
+      if(err) {
+        return sendErrorJSON(res, err, 500);
+      }
+
+      // If peer exists, use this to update nickname. Otherwise create new peer
+      if(peer) {
+        peer.nickname = newPeer.nickname;
+      } else {
+        peer = new Peer(newPeer);
+      }
+
+      Cert.findOne({peerId: peer.peerId, accountName: peer.accountName, status: 'valid'}, function(err, cert) {
+        if(err) {
+          return sendErrorJSON(res, err, 500);
+        }
+
+        // If there exists a certificate for this user already, assign to this peer
+        if(cert) {
+          peer.cert = cert._id;
+        }
+
+        peer.save(function(err) {
+          if(err) {
+            return sendErrorJSON(res, err, 500);
+          }
+
+          res.json(peer)
+        });
+      });
+    })
+  });
+};
+
+// Remove a peer from account's list
+exports.removePeer = function(req, res) {
+  if(!req.body.peerID) {
+    sendErrorJSON(res, "Requires IPFS-ID of peer to remove", 400);
+  }
+
+  Account.findOne({peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, acct) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+
+    const accountName = req.body.accountName || 'root';
+    Peer.findOne({owner: acct._id, peerId: req.body.peerId, accountName: accountName}, function(err, peer) {
+      if(err) {
+        return sendErrorJSON(res, err, 500);
+      }
+
+      const peerFullTitle = req.body.peerId + (!!req.body.accountName ? ':' + accountName : "");
+      if(!peer) {
+        return sendErrorJSON(res, 'Authorized account does not have peer: ' + peerFullTitle, 400);
+      }
+
+      Peer.remove({owner: acct._id, peerId: req.body.peerId, accountName: accountName}, function(err, delStats) {
+        if(err) {
+          return sendErrorJSON(res, err, 500);
+        }
+
+        res.json({message: 'Successfully removed peer: ' + peerFullTitle});
+      });
+    });
   });
 };
