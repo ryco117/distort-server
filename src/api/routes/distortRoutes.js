@@ -22,8 +22,13 @@ module.exports = function(app) {
   // Manage accounts
   app.route('/account')
     .get(distort.fetchAccount);
+    // TODO: Allow 'root' account to manage other accounts
     //.post()
     //.delete()
+
+  // TODO: Allow to set certain account parameters ('enabled', 'activeGroup', etc)
+  /*app.route('/account/set/')
+    .put();*/
 
   app.route('/peers')
     .get(distort.fetchPeers)
