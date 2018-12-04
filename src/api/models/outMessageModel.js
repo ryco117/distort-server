@@ -3,10 +3,10 @@ var mongoose = require('mongoose'),
   Schema = mongoose.Schema;
 
 var OutMessageSchema = new Schema({
-  groupId: {
+  conversation: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Groups',
-    required: 'Must reference the existing group message was received on'
+    ref: 'Conversations',
+    required: 'Must reference the existing conversation message was sent on'
   },
   index: {
     type: Number,

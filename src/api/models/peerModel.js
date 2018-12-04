@@ -9,7 +9,8 @@ var PeerSchema = new Schema({
   },
   cert: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Certs'
+    ref: 'Certs',
+    required: 'Peer must be associated with their certificate'
   },
   nickname: {
     type: String

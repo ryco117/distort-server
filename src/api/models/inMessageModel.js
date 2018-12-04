@@ -3,24 +3,14 @@ var mongoose = require('mongoose'),
   Schema = mongoose.Schema;
 
 var InMessageSchema = new Schema({
+  conversation: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Conversations',
+    required: 'Must reference the existing conversation message was received on'
+  },
   dateReceived: {
     type: Date,
     default: Date.now
-  },
-  from: {
-    accountName: {
-      type: String,
-      default: 'root'
-    },
-    peerId: {
-      type: String,
-      required: 'Cannot save message without source IPFS-ID'
-    }
-  },
-  groupId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Groups',
-    required: 'Must reference the existing group message was received on'
   },
   index: {
     type: Number,

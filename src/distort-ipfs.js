@@ -6,6 +6,7 @@ var ipfsAPI = require('ipfs-api'),
   mongoose = require('mongoose'),
   Account = mongoose.model('Accounts'),
   Cert = mongoose.model('Certs'),
+  Conversation = mongoose.model('Conversations'),
   Group = mongoose.model('Groups'),
   InMessage = mongoose.model('InMessages'),
   OutMessage = mongoose.model('OutMessages');
@@ -75,8 +76,12 @@ distort_ipfs.initIpfs = function(address, port) {
     }
     self.peerId = identity.id;
 
-    // Find accounts for current IPFS ID (or create new 'root' account if none exist)
-    Account.find({peerId: self.peerId}, function(err, accounts) {
+    // Find accounts for current IPFS ID (or create new 'root' account if none exist) that are enabled. 'root' cannot be disabled
+    Account
+      .find({peerId: self.peerId, enabled: true})
+      .populate('cert')
+      .exec(function(err, accounts) {
+
       if(err) {
         throw console.error(err);
       }
@@ -150,7 +155,6 @@ distort_ipfs.initIpfs = function(address, port) {
 
             // Create and save new account schema
             var newAccount = new Account({
-              accountName: 'root',
               cert: cert._id,
               peerId: self.peerId,
               tokenHash: tokenHash
@@ -166,39 +170,25 @@ distort_ipfs.initIpfs = function(address, port) {
           });
         });
       } else {
+        // Account(s) for this IPFS node already exist
         for(var i = 0; i < accounts.length; i++) {
           const account = accounts[i];
 
-          // TODO: REMOVE TEST VALUE self.activeGroupId
-          if(account.accountName === 'root') {
-            self.activeGroupId = account.activeGroup;
-          }
-
-          // Load keypairs for current certificate
-          Cert.findById(account.cert, function(err, cert) {
+          // Subscribe IPFS-node to all stored groups for account
+          Group.find({owner: account._id}, function(err, groups) {
             if(err) {
               throw console.error(err);
             }
-            if(!cert) {
-              throw new Error('A certificate is required for accounts');
+            for(var  i = 0; i < groups.length; i++) {
+              self.subscribe(groups[i].name, groups[i].subgroupIndex);
             }
-
-            // Subscribe IPFS-node to all stored groups for account
-            Group.find({peerId: account.peerId, accountName: account.accountName}, function(err, groups) {
-              if(err) {
-                throw console.error(err);
-              }
-              for(var  i = 0; i < groups.length; i++) {
-                self.subscribe(groups[i].name, groups[i].subgroupIndex);
-              }
-            });
           });
         }
       }
     });
 
     // Setup routines to run
-    self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+    self.msgIntervalId = setInterval(() => self._dequeueMsg(), 2.5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
     self.certIntervalId = setInterval(() => self._publishCert(), 60 * SECONDS_PER_MINUTE * MS_PER_SECOND);
   });
 };
@@ -259,60 +249,101 @@ function packageMessage(msg) {
 distort_ipfs._dequeueMsg = function () {
   const self = this;
 
-  if(!self.activeGroupId) {
-    return;
-  }
-
-  // TODO: dequeue for all accounts with IPFS-ID matching current node
-
-  // Find active group for account
-  Group.findById(self.activeGroupId, function(err, group) {
+  Account
+  .find({peerId: self.peerId, enabled: true})
+  .populate('cert')
+  .populate('activeGroup')
+  .exec(function(err, accounts) {
     if(err) {
       return console.error(err);
     }
 
-    OutMessage
-      .find({groupId: self.activeGroupId, status: 'enqueued'})
-      .populate('to')
-      .sort('lastStatusChange')
-      .exec(function(err, msgs) {
-
-      if(DEBUG) {
-        console.log('Active group: ' + group.name);
-        console.log('Queried messages: ' + JSON.stringify(msgs));
+    for(var i = 0; i < accounts.length; i++) {
+      const account = accounts[i];
+      const group = account.activeGroup;
+      if(!group) {
+        continue;
       }
 
-      const randPath = groupTree.randomPath();
-      if(DEBUG) {
-        console.log(JSON.stringify(randPath));
-      }
-
-      var m = {v: PROTOCOL_VERSION, fromAccount: group.accountName};
-      var index = undefined;
-      for(var i = 0; i < msgs.length; i++) {
-        if(hasGroupInPath(group.name, randPath, msgs[i].to.groups)) {
-          m.message = msgs[i].message;
-          m.to = msgs[i].to;
-          index = i;
-          break;
+      OutMessage.aggregate([
+      {
+        $lookup: {
+          from: 'certs',
+          localField: 'to',
+          foreignField: '_id',
+          as:'to'
         }
-      }
-      m = packageMessage(m);
-
-      // TODO: Sign ciphertext using accounts signing key
-
-      // Publish message to IPFS
-      try {
-        distort_ipfs.publishToSubgroups(group.name, randPath, JSON.stringify(m));
-        if(index !== undefined) {
-
-          msgs[index].status = 'sent';
-          msgs[index].save();
+      },
+      {
+        $lookup: {
+          from: 'conversations',
+          localField: 'conversation',
+          foreignField: '_id',
+          as:'conversation'
         }
-      } catch(err) {
-        return console.error(err);
-      }
-    });
+      },
+      {
+        $unwind:'$to'
+      },
+      {
+        $unwind:'$conversation'
+      },
+      {
+        $match: {
+          'status': 'enqueued',
+          'conversation.group': group._id
+        }
+      }]).sort('lastStatusChange')
+        .exec(function(err, msgs) {
+
+        if(DEBUG) {
+          console.log('Active group: ' + group.name);
+          console.log('Queried messages: ' + JSON.stringify(msgs));
+        }
+
+        const randPath = groupTree.randomPath();
+        if(DEBUG) {
+          console.log(JSON.stringify(randPath));
+        }
+
+        var m = {v: PROTOCOL_VERSION, fromAccount: account.accountName};
+        var index = undefined;
+        for(var i = 0; i < msgs.length; i++) {
+          if(hasGroupInPath(group.name, randPath, msgs[i].to.groups)) {
+            m.message = msgs[i].message;
+            m.to = msgs[i].to;
+            index = i;
+            break;
+          }
+        }
+        m = packageMessage(m);
+
+        // TODO: Sign ciphertext using accounts signing key
+
+        // Publish message to IPFS
+        try {
+          distort_ipfs.publishToSubgroups(group.name, randPath, JSON.stringify(m));
+          if(index !== undefined) {
+            OutMessage
+              .findById(msgs[index]._id)
+              .populate('conversation')
+              .exec(function(err, msg) {
+
+              if(err) {
+                throw new Error(err);
+              }
+              msg.status = 'sent';
+              msg.lastStatusChange = Date.now();
+              msg.save();
+              msg.conversation.latestStatusChangeDate = Date.now();
+              msg.conversation.save();
+            });
+          }
+        } catch(err) {
+          return console.error(err);
+        }
+      });
+    }
   });
 
   /* Safe removal of loop */
@@ -376,7 +407,7 @@ distort_ipfs._publishCert = function() {
 function subscribeMessageHandler(msg) {
   if(DEBUG) {
     console.log('Received message: ' + msg.data);
-    console.log('Message from: ' + msg.from);
+    console.log('Message from IPFS node: ' + msg.from);
   }
 
   if(!distort_ipfs.peerId) {
@@ -402,7 +433,7 @@ function subscribeMessageHandler(msg) {
 
   // Find all certs that match the current IPFS node that have not expired
   Cert
-    .find({peerId: distort_ipfs.peerId, })
+    .find({peerId: distort_ipfs.peerId})
     .where('lastExpiration').gt(Date.now())
     .exec(function(err, certs) {
 
@@ -438,7 +469,7 @@ function subscribeMessageHandler(msg) {
         }
       }
     }
-    if(cert === null) {
+    if(!cert) {
       return;
     }
 
@@ -458,30 +489,77 @@ function subscribeMessageHandler(msg) {
     var groupIndex = groupPattern.exec(fromGroup)[2];
     groupIndex = (groupIndex==="all") ? 0 : parseInt(groupIndex);
 
-    // Save message to DB
-    Group.findOne({peerId: distort_ipfs.peerId, accountName: cert.accountName, name: groupName, subgroupIndex: groupIndex}, function(err, group) {
-      if(!group) {
-        throw new Error('Could not find a subscribed group in: ' + JSON.stringify(msg.topicIDs));
-      }
-      var inMessage = new InMessage({
-        from: {
-          accountName: msg.fromAccount || 'root',
-          peerId: from
-        },
-        groupId: group._id,
-        index: group.height++,
-        message: plaintext,
-        verified: false
-      });
-      inMessage.save(function(err, msg) {
-        if(err) {
-          throw console.error(err);
+    // Determine which group message was received on
+    Group.aggregate([
+      {
+        $lookup: {
+          from: 'accounts',
+          localField: 'owner',
+          foreignField: '_id',
+          as:'owner'
         }
-        if(DEBUG) {
-          console.log('Saved received message to DB at index: ' + msg.index);
+      },
+      {
+        $unwind:'$owner'
+      },
+      {
+        $match: {
+          'name': groupName,
+          'subgroupIndex': groupIndex,
+          'owner.peerId': cert.peerId,
+          'owner.accountName': cert.accountName
         }
+      }]).exec(function(err, group) {
 
-        group.save();
+      group = group[0];
+      if(!group) {
+        throw new Error('Could not find a subscribed group: ' + JSON.stringify(fromGroup));
+      }
+
+      // Determine conversation of message, or create a new one
+      new Promise(function(resolve, reject) {
+        Conversation.findOne({group: group._id, peerId: from, accountName: msg.fromAccount || 'root'}, function(err, conversation) {
+          if(err) {
+            throw new Error(err);
+          }
+          if(conversation) {
+            return resolve(conversation);
+          } else {
+            conversation = new Conversation({
+              group: group._id,
+              owner: group.owner._id,
+              peerId: from,
+              accountName: msg.fromAccount || 'root'
+            });
+            conversation.save(function(err, conversation) {
+              if(err) {
+                throw new Error(err);
+              }
+              resolve(conversation);
+            });
+          }
+        });
+      }).catch(function(err) {
+        throw console.error(err);
+      }).then(function(conversation) {
+        // Save message to DB
+        var inMessage = new InMessage({
+          conversation: conversation._id,
+          index: conversation.height++,
+          message: plaintext,
+          verified: false
+        });
+        inMessage.save(function(err, msg) {
+          if(err) {
+            throw console.error(err);
+          }
+          if(DEBUG) {
+            console.log('Saved received message to DB at index: ' + msg.index);
+          }
+
+          conversation.latestStatusChangeDate = Date.now();
+          conversation.save();
+        });
       });
     });
   });

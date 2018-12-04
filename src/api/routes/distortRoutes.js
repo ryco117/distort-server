@@ -9,15 +9,15 @@ module.exports = function(app) {
 
   // Manage activity within a group
   app.route('/groups/:groupName')
-    .get(distort.readMissedMessages)
+    .get(distort.fetchConversations)
     .put(distort.postMessage)
     .delete(distort.leaveGroup);
 
   // Fetch messages from a group in given range
   app.route('/groups/:groupName/:indexStart/:indexEnd')
-    .get(distort.readMessagesInRange);
+    .get(distort.readConversationMessagesInRange);
   app.route('/groups/:groupName/:indexStart')
-    .get(distort.readMessagesInRange);
+    .get(distort.readConversationMessagesInRange);
 
   // Manage accounts
   app.route('/account')

@@ -3,25 +3,14 @@ var mongoose = require('mongoose'),
   Schema = mongoose.Schema;
 
 var GroupSchema = new Schema({
-  accountName: {
-    type: String,
-    default: 'root'
-  },
-  height: {
-    type: Number,
-    default: 0
-  },
-  lastReadIndex: {
-    type: Number,
-    default: -1
-  },
   name: {
     type: String,
     required: 'Must give this group a name'
   },
-  peerId: {
-    type: String,
-    required: 'Must be associated with the peer-ID of the creating account'
+  owner: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Accounts',
+    required: 'Must specify local account participating in this group'
   },
   subgroupIndex: {
     type: Number,
@@ -29,7 +18,7 @@ var GroupSchema = new Schema({
   }
 });
 
-// Each pair of account (a pair IPFS-ID and account-name) and group must be unique. Thus a single account can only subscribe to a given group once
-GroupSchema.index({peerId: 1, accountName:1, name: 1}, {unique: true});
+// Each pair of account and group must be unique. Thus a single account can only subscribe to a given group once
+GroupSchema.index({owner:1, name: 1}, {unique: true});
 
 module.exports = mongoose.model('Groups', GroupSchema);
