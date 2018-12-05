@@ -2,6 +2,7 @@
 
 var mongoose = require('mongoose'),
   distort_ipfs = require('../../distort-ipfs'),
+  groupTree = require('../../groupTree'),
   config = require('../../config'),
   Account = mongoose.model('Accounts'),
   Cert = mongoose.model('Certs'),
@@ -30,6 +31,9 @@ function updateActiveGroup(peerId, groupId, accountName) {
 // Send error JSON
 function sendErrorJSON(res, err, statusCode) {
   res.status(statusCode);
+
+  err = (typeof err === "string") ? err : JSON.stringify(err);
+
   return res.json({error: err});
 }
 
@@ -68,10 +72,11 @@ exports.listGroups = function(req, res) {
 
 // Add topic and given subgroup path to account's groups
 exports.addGroup = function(req, res) {
-  const subI = parseInt(req.body.subgroupIndex);
-  if(isNaN(subI) || subI < 0) {
-    return sendErrorJSON(res, '"subgroupIndex" must be a non-negative integer', 400);
+  const subLevel = parseInt(req.body.subgroupLevel);
+  if(isNaN(subLevel) || subLevel < 0 || subLevel > groupTree.MAX_PATH_DEPTH) {
+    return sendErrorJSON(res, '"subgroupLevel" must be a non-negative integer', 400);
   }
+  const subI = groupTree.randomFromLevel(subLevel);
 
   Account.findOne({peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, account) {
     if(err) {
@@ -88,14 +93,14 @@ exports.addGroup = function(req, res) {
 
       if(group) {
         try {
-          distort_ipfs.subscribe(reqGroup.name, group.subgroupIndex);
-          distort_ipfs.unsubscribe(reqGroup.name, subI);
+          distort_ipfs.unsubscribe(reqGroup.name, group.subgroupIndex);
+          distort_ipfs.subscribe(reqGroup.name, subI);
         } catch(err) {
           return sendErrorJSON(res, err, 500);
         }
         group.subgroupIndex = subI;
         group.save();
-        return res.json({message: 'Updated group: ' + group.name});
+        return res.json(group);
       }
 
       reqGroup.subgroupIndex = subI;
@@ -548,6 +553,9 @@ exports.addPeer = function(req, res) {
         if(err) {
           return sendErrorJSON(res, err, 500);
         }
+        if(!cert) {
+          return sendErrorJSON(res, "Cannot add a peer until discovery of their certificate. Please wait for their next routine certificate posti", 400);
+        }
 
         // If there exists a certificate for this user already, assign to this peer
         if(cert) {
@@ -558,8 +566,12 @@ exports.addPeer = function(req, res) {
           if(err) {
             return sendErrorJSON(res, err, 500);
           }
-
-          res.json(peer)
+          peer.populate('cert', function(err) {
+            if(err) {
+              return sendErrorJSON(res, err, 500);
+            }
+            res.json(peer);
+          });
         });
       });
     })

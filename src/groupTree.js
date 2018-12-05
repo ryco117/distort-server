@@ -20,6 +20,6 @@ exports.randomPath = function() {
 };
 
 exports.randomFromLevel = function(level) {
-  var path = randomPath();
-  return path[parseInt(Math.abs(level))];
+  var path = this.randomPath();
+  return path[Math.abs(parseInt(level))];
 };

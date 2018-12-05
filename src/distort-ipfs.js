@@ -188,7 +188,7 @@ distort_ipfs.initIpfs = function(address, port) {
     });
 
     // Setup routines to run
-    self.msgIntervalId = setInterval(() => self._dequeueMsg(), 2.5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+    self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
     self.certIntervalId = setInterval(() => self._publishCert(), 60 * SECONDS_PER_MINUTE * MS_PER_SECOND);
   });
 };
