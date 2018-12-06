@@ -25,7 +25,7 @@ const SUPPORTED_PROTOCOLS = [PROTOCOL_VERSION];
 const secp256k1 = sjcl.ecc.curves.k256;
 
 // Create distort-on- ipfs object to export
-var distort_ipfs = {};
+var distort_ipfs = {_subscribedTo: {}, _subscribedToCert: {}};
 
 // Group naming helpers
 function toGroupIndexCouple(group, index) {
@@ -179,7 +179,7 @@ distort_ipfs.initIpfs = function(address, port) {
             if(err) {
               throw console.error(err);
             }
-            for(var  i = 0; i < groups.length; i++) {
+            for(var i = 0; i < groups.length; i++) {
               self.subscribe(groups[i].name, groups[i].subgroupIndex);
             }
           });
@@ -662,13 +662,20 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
   const topicCerts = nameToCertTopic(name);
   topic = nameAndSubgroupToTopic(name, subgroupIndex);
 
+  // Remeber number of accounts requiring this channel
+  this._subscribedTo[topic] = this._subscribedTo[topic] > 0 ? this._subscribedTo[topic]+1 : 1;
+
   this.ipfsNode.pubsub.subscribe(topic, subscribeMessageHandler, {discover: true}, err => {
     if(err) {
-      throw console.error('Failed to subscribe to: ' + topic, err);
+      throw new Error('Failed to subscribe to: ' + topic, err);
     }
+
+    // Remeber number of accounts requiring these certs
+    this._subscribedToCert[topic] = this._subscribedToCert[topic] > 0 ? this._subscribedToCert[topic]+1 : 1;
+
     this.ipfsNode.pubsub.subscribe(topicCerts, certificateMessageHandler, {discover: true}, err => {
       if(err) {
-        throw console.error('Failed to subscribe to: ' + topicCerts, err);
+        throw new Error('Failed to subscribe to: ' + topicCerts, err);
       }
       if(DEBUG) {
         console.log('Now subscribed to: ' + topic);
@@ -681,13 +688,34 @@ distort_ipfs.unsubscribe = function(topic, subgroupIndex) {
   const topicCerts = nameToCertTopic(topic);
   topic = nameAndSubgroupToTopic(topic, subgroupIndex);
 
+  // Only unsubscribe after no more accounts require it
+  if(this._subscribedTo[topic] > 0) {
+    this._subscribedTo[topic] -= 1;
+    if(this._subscribedTo[topic] > 0) {
+      return
+    }
+  } else {
+    return;
+  }
+
   this.ipfsNode.pubsub.unsubscribe(topic, subscribeMessageHandler, err => {
     if(err) {
-      throw console.error('Failed to unsubscribe from: ' + topic, err);
+      throw new Error('Failed to unsubscribe from: ' + topic, err);
     }
+
+    // Only unsubscribe certs after no more accounts require it
+    if(this._subscribedToCert[topic] > 0) {
+      this._subscribedToCert[topic] -= 1;
+      if(this._subscribedToCert[topic] > 0) {
+        return
+      }
+    } else {
+      return;
+    }
+
     this.ipfsNode.pubsub.unsubscribe(topicCerts, certificateMessageHandler, err => {
       if(err) {
-        throw console.error('Failed to unsubscribe from: ' + topicCerts, err);
+        throw new Error('Failed to unsubscribe from: ' + topicCerts, err);
       }
       if(DEBUG) {
         console.log('Unsubscribed from: ' + topic);

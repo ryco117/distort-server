@@ -26,9 +26,9 @@ module.exports = function(app) {
     //.post()
     //.delete()
 
-  // TODO: Allow to set certain account parameters ('enabled', 'activeGroup', etc)
-  /*app.route('/account/set/')
-    .put();*/
+  // Allow to set account settings ('enabled', 'activeGroup', etc)
+  app.route('/account/set/')
+    .put(updateAccount);
 
   app.route('/peers')
     .get(distort.fetchPeers)

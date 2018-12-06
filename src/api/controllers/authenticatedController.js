@@ -58,10 +58,6 @@ exports.authenticate = function(req, res, next) {
       return sendErrorJSON(res, 'Could not authenticate user as peer: ' + peerId + ":" + accountName, 401);
     }
 
-    if(!account.enabled) {
-      return sendErrorJSON(res, 'This account is disabled. Speak with owner of account "root" to have account enabled', 403);
-    }
-
     account.lastInteraction = Date.now();
     account.save();
     next();

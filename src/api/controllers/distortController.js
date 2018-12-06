@@ -1,6 +1,7 @@
 "use strict";
 
 var mongoose = require('mongoose'),
+  sjcl = require('sjcl'),
   distort_ipfs = require('../../distort-ipfs'),
   groupTree = require('../../groupTree'),
   config = require('../../config'),
@@ -33,6 +34,10 @@ function sendErrorJSON(res, err, statusCode) {
   res.status(statusCode);
 
   err = (typeof err === "string") ? err : JSON.stringify(err);
+
+  if(DEBUG) {
+    console.error(err + " : " + statusCode);
+  }
 
   return res.json({error: err});
 }
@@ -93,7 +98,6 @@ exports.addGroup = function(req, res) {
 
       if(group) {
         try {
-          distort_ipfs.unsubscribe(reqGroup.name, group.subgroupIndex);
           distort_ipfs.subscribe(reqGroup.name, subI);
         } catch(err) {
           return sendErrorJSON(res, err, 500);
@@ -495,6 +499,63 @@ exports.fetchAccount = function(req, res) {
     res.json(acct);
   });
 };
+
+
+// Create new account (if 'root')
+exports.updateAccount = function(req, res) {
+  if(req.headers.accountname !== 'root' && req.headers.accountname !== req.body.accountName) {
+    return sendErrorJSON(res, 'Not authorized to update this account', 403);
+  }
+
+  Account.findOne({peerId: req.headers.peerid, accountName: req.body.accountName}, function(err, account){
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+    if(!account) {
+      return sendErrorJSON(res, 'Account "' + req.body.accountName + '" does not exist', 400);
+    }
+
+    // set active group of account
+    account.activeGroup = req.body.activeGroupId || account.activeGroup;
+
+    // Only non-root users may be disabled
+    if(req.body.accountName !=='root') {
+      if(req.body.enabled && !account.enabled) {
+        // Enable account in DB
+        account.enabled = true;
+
+        // Start listening for this account
+        Group.find({owner: account._id}, function(err, groups) {
+          for(var i = 0; i < groups.length; i++) {
+            distort_ipfs.subscribe(groups[i].name, groups[i].subgroupIndex);
+          }
+        });
+      } else if(req.body.enabled === false && account.enabled) {
+        // Disable account in DB
+        account.enabled = false;
+
+        // Stop listening for this account
+        Group.find({owner: account._id}, function(err, groups) {
+          for(var i = 0; i < groups.length; i++) {
+            distort_ipfs.unsubscribe(groups[i].name, groups[i].subgroupIndex);
+          }
+        });
+      }
+    }
+
+    // Allow updating of password by submitting new authentication-token
+    if(req.body.authToken) {
+      account.tokenHash = sjcl.codec.base64.fromBits(sjcl.hash.sha256.hash(req.body.authToken));
+    }
+
+    account.save(function(err, account) {
+      if(err) {
+        return sendErrorJSON(res, err, 500);
+      }
+      res.json(account);
+    });
+  });
+}
 
 
 // Retrieve account peers
