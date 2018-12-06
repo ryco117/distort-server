@@ -28,7 +28,7 @@ module.exports = function(app) {
 
   // Allow to set account settings ('enabled', 'activeGroup', etc)
   app.route('/account/set/')
-    .put(updateAccount);
+    .put(distort.updateAccount);
 
   app.route('/peers')
     .get(distort.fetchPeers)
