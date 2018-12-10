@@ -503,6 +503,7 @@ exports.fetchAccount = function(req, res) {
 
 // Create new account (if 'root')
 exports.updateAccount = function(req, res) {
+  req.body.accountName = req.body.accountName || 'root';
   if(req.headers.accountname !== 'root' && req.headers.accountname !== req.body.accountName) {
     return sendErrorJSON(res, 'Not authorized to update this account', 403);
   }
@@ -516,11 +517,17 @@ exports.updateAccount = function(req, res) {
     }
 
     // set active group of account
-    account.activeGroup = req.body.activeGroupId || account.activeGroup;
+    if(typeof req.body.activeGroup === 'string') {
+      if(req.body.activeGroup) {
+        account.activeGroup = req.body.activeGroup;
+      } else {
+        account.activeGroup = undefined;
+      }
+    }
 
     // Only non-root users may be disabled
-    if(req.body.accountName !=='root') {
-      if(req.body.enabled && !account.enabled) {
+    if(req.body.accountName !== 'root') {
+      if(req.body.enabled === 'true' && account.enabled === 'false') {
         // Enable account in DB
         account.enabled = true;
 
@@ -530,7 +537,7 @@ exports.updateAccount = function(req, res) {
             distort_ipfs.subscribe(groups[i].name, groups[i].subgroupIndex);
           }
         });
-      } else if(req.body.enabled === false && account.enabled) {
+      } else if(req.body.enabled === 'false' && account.enabled === 'true') {
         // Disable account in DB
         account.enabled = false;
 
@@ -544,7 +551,7 @@ exports.updateAccount = function(req, res) {
     }
 
     // Allow updating of password by submitting new authentication-token
-    if(req.body.authToken) {
+    if(req.body.authToken && typeof req.body.authToken === "string") {
       account.tokenHash = sjcl.codec.base64.fromBits(sjcl.hash.sha256.hash(req.body.authToken));
     }
 
