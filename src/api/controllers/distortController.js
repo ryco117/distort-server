@@ -33,13 +33,13 @@ function updateActiveGroup(peerId, groupId, accountName) {
 function sendErrorJSON(res, err, statusCode) {
   res.status(statusCode);
 
-  err = (typeof err === "string") ? err : JSON.stringify(err);
+  err = (typeof err === "string") ? err : (err.message || String(err));
 
   if(DEBUG) {
     console.error(err + " : " + statusCode);
   }
 
-  return res.json({error: err});
+  return res.json({'error': err});
 }
 
 // List all (sub)group memberships through their groups and subgroup paths
@@ -121,10 +121,12 @@ exports.addGroup = function(req, res) {
         }
 
         // If none active, set new group to be active group
-        try {
-          updateActiveGroup(req.headers.peerid, group._id, req.headers.accountname);
-        } catch(err) {
-          return sendErrorJSON(res, err, 500);
+        if(!account.activeGroup) {
+          try {
+            updateActiveGroup(req.headers.peerid, group._id, req.headers.accountname);
+          } catch(err) {
+            return sendErrorJSON(res, err, 500);
+          }
         }
 
         // Include group in certificate
@@ -370,6 +372,15 @@ exports.leaveGroup = function(req, res) {
         return sendErrorJSON(res, err, 500);
       }
 
+      // Remove all conversations associated with group
+      Conversation.find({group: group._id}, function(err, conversations) {
+        for(var i = 0; i < conversations.length; i++) {
+          InMessage.remove({conversation: conversations[i]._id});
+          OutMessage.remove({conversation: conversations[i]._id});
+          conversations[i].remove();
+        }
+      });
+
       try {
         distort_ipfs.unsubscribe(group.name, group.subgroupIndex);
       } catch(err) {
@@ -379,14 +390,13 @@ exports.leaveGroup = function(req, res) {
       // Remove group from certificate
       Account
         .findOne({peerId: req.headers.peerid, accountName: req.headers.accountname})
-        .select('activeGroup, cert')
         .exec(function(err, acct) {
         if(err) {
           return sendErrorJSON(res, err, 500);
         }
 
-        if(acct.activeGroup === group._id) {
-          delete acct.activeGroup;
+        if(String(acct.activeGroup) === String(group._id)) {
+          acct.activeGroup = undefined;
           acct.save();
         }
 
@@ -489,7 +499,6 @@ exports.readConversationMessagesInRange = function(req, res) {
 exports.fetchAccount = function(req, res) {
   Account
     .findOne({peerId: req.headers.peerid, accountName: req.headers.accountname})
-    .populate({path: 'activeGroup', select: 'name subgroupIndex'})
     .select('accountName activeGroup enabled peerId')
     .exec(function(err, acct) {
     if(err) {
@@ -648,8 +657,8 @@ exports.addPeer = function(req, res) {
 
 // Remove a peer from account's list
 exports.removePeer = function(req, res) {
-  if(!req.body.peerID) {
-    sendErrorJSON(res, "Requires IPFS-ID of peer to remove", 400);
+  if(!req.body.peerId) {
+    return sendErrorJSON(res, "Requires IPFS-ID of peer to remove", 400);
   }
 
   Account.findOne({peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, acct) {
