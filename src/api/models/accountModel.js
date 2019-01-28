@@ -5,6 +5,10 @@ var mongoose = require('mongoose'),
 var AccountSchema = new Schema({
   accountName: {
     type: String,
+    collation: {
+      locale: 'en',
+      strength: 2
+    },
     default: 'root'
   },
   activeGroup: {
