@@ -1,4 +1,4 @@
-var ipfsAPI = require('ipfs-api'),
+var ipfsAPI = require('ipfs-http-client'),
   sjcl = require('sjcl'),
   prompt = require('password-prompt'),
   config = require('./config'),
@@ -65,7 +65,7 @@ function hasGroupInPath(groupName, path, groups) {
 distort_ipfs.initIpfs = function(address, port) {
   var self = this;
 
-  // Conenct to IPFS node
+  // Connect to IPFS node
   this.ipfsNode = ipfsAPI(address, port);
   this.ipfsNode.id((err, identity) => {
     if(err) {

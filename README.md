@@ -8,4 +8,4 @@ While the REST calls offer no end-to-end encryption of there own between the cli
 signed by a proper certificate authority (eg. Lets Encrypt) is both easy and ensures clients can trust their connections to the homeserver. 
 
 ### Build
-Can be easily buillt with `npm install && make` then launched with `npm start`.
+Can be easily built with `npm install && make` then launched with `npm start`.

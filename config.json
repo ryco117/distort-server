@@ -3,7 +3,7 @@
   "port": 6945,
   "ipfsNode": {
     "port": "5001",
-    "address": "192.168.0.104"
+    "address": "localhost"
   },
   "protocolVersion": "0.1.0"
 }

@@ -18,7 +18,7 @@
     "body-parser": "^1.18.3",
     "browserify": "^16.2.3",
     "express": "^4.16.4",
-    "ipfs-api": "^25.0.0",
+    "ipfs-http-client": "^29.0.1",
     "mongoose": "^5.4.7",
     "password-prompt": "^1.0.7"
   },
