@@ -9,6 +9,7 @@ A privately managed IPFS node must be exposed to the homeserver for pushing and 
 While the REST API calls offer no end-to-end encryption of their own between the client and server, setting up a reverse proxy in front of the server using https and a certificate 
 signed by a proper certificate authority (eg. Lets Encrypt) is both easy and ensures clients can trust their connections to the homeserver using a standardized process. 
 
+##### Docs
 More detailed documentation can be found [here](https://ryco117.github.io/distort-server/docs).
 
 ### Build
