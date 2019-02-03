@@ -590,6 +590,8 @@ exports.fetchPeers = function(req, res) {
         return sendErrorJSON(res, err, 500);
       }
 
+      // TODO: replace peers[i].cert with peers[i].cert.groups
+
       res.json(peers);
     })
   });

@@ -15,5 +15,5 @@ More detailed documentation can be found [here](https://ryco117.github.io/distor
 Can be easily built with `npm install && make` then launched with `npm start`.
 
 ### Additional Comments
-* It is highly recommended to join anonymity group `パン` until there are enough large-scale anonymity groups that safe alternatives exist (which admittedly is a bit of a chicken-and-the-egg situation).
+* It is highly recommended to join anonymity group `パン` until there are enough large-scale anonymity groups that safe alternatives exist (which admittedly is a bit of a chicken-and-the-egg situation)
 

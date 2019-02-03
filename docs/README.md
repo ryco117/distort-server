@@ -22,19 +22,26 @@
 	* DELETE
 * /groups/:group-name/:index-start/[:index-end]
 	* GET
+        - Additional request headers:
+            * `conversationpeerid` set to the IPFS node ID of the peer being conversed with in group `group-name`
+            * (Optional) `conversationaccountname` set to the account name of the peer being conversed with. Defaults to `root`
 	    - Return type: an object containing two fields, `in` and `out`, each of which are arrays of message objects
-	    - Return value: all received and sent (respectively) messages in 
+	    - Return value: all received and sent (respectively) messages (in the uniquely specified conversation), with indicies between `index-start` and `index-end` (inclusively)
 * /account
 	* GET
+        - Return type: account object
+        - Return value: details of the account used to authorize request
 	* PUT
 * /peers
 	* GET
+        - Return type: array of peer objects
+        - Return value: details of all the peers the authorized account has explicitly added
 	* POST
 	* DELETE
 	
 ---
 Note: Authenticated HTTP requests take headers: 
-* `peerid` set to the IPFS node ID of the account to authorize as. Must be equal to the IPFS ID of the current node in use.
-* `authtoken` set to the Base64 encoded hash of the account's password. Hash algorithm is PBKDF2 using SHA-256. The salt is the IPFS node ID (equivalent to `peerid`), and the work-constant is `1000`.
-* (Optional) `accountname` set to the name of the account to authorize as. If field is not specified or empty, will default to `root`.
+* `peerid` set to the IPFS node ID of the account to authorize as. Must be equal to the IPFS ID of the current node in use
+* `authtoken` set to the Base64 encoded hash of the account's password. Hash algorithm is PBKDF2 using SHA-256. The salt is the IPFS node ID (equivalent to `peerid`), and the work-constant is `1000`
+* (Optional) `accountname` set to the name of the account to authorize as. If field is not specified or empty, will default to `root`
 
