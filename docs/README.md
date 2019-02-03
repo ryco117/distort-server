@@ -1,5 +1,5 @@
 # DistoRt Homeserver
-([main page](ryco117.github.io/distort-server))
+([main page](https://ryco117.github.io/distort-server))
 
 ## REST API
 ### Unauthenticated
