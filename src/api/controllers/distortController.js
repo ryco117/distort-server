@@ -180,17 +180,17 @@ exports.fetchConversations = function(req, res) {
       'owner.accountName': req.headers.accountname,
       'group.name': req.params.groupName
     }
-  }]).exec(function(err, groups) {
+  }]).exec(function(err, conversations) {
     if(err) {
       return sendErrorJSON(res, err, 500);
     }
 
-    for(var i = 0; i < groups.length; i++) {
-      delete groups[i].owner;
-      delete groups[i].group;
+    for(var i = 0; i < conversations.length; i++) {
+      delete conversations[i].owner;
+      delete conversations[i].group;
     }
 
-    res.json(groups);
+    res.json(conversations);
   });
 };
 
