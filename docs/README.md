@@ -1,5 +1,5 @@
 # DistoRt Homeserver
-
+([main page](ryco117.github.io/distort-server))
 
 ## REST API
 ### Unauthenticated
@@ -31,6 +31,7 @@
 	* GET
 	* POST
 	* DELETE
+	
 ---
 Note: Authenticated HTTP requests take headers: 
 * `peerid` set to the IPFS node ID of the account to authorize as. Must be equal to the IPFS ID of the current node in use.
