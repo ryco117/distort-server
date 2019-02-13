@@ -66,8 +66,8 @@ distort_ipfs.initIpfs = function(address, port) {
 
   return new Promise((resolve, reject) => {
     // Connect to IPFS node
-    this.ipfsNode = ipfsAPI(address, port);
-    this.ipfsNode.id((err, identity) => {
+    self.ipfsNode = ipfsAPI(address, port);
+    self.ipfsNode.id((err, identity) => {
       if(err) {
         return reject('Failed to connect to IPFS node: ' + err);
       }
@@ -76,107 +76,114 @@ distort_ipfs.initIpfs = function(address, port) {
       }
       self.peerId = identity.id;
 
-      // Find accounts for current IPFS ID (or create new 'root' account if none exist) that are enabled. 'root' cannot be disabled
-      Account
-        .find({peerId: self.peerId, enabled: true})
-        .populate('cert')
-        .exec(function(err, accounts) {
-
+      // https://github.com/ipfs/go-ipfs/blob/c10f043f3bb7a48e8b43e7f4e35e1cbccf762c68/docs/experimental-features.md#message-signing
+      self.ipfsNode.config.set('Pubsub.StrictSignatureVerification', true, (err) => {
         if(err) {
-          return reject('Could not search database: ' + err);
+          reject('Could not ensure key verification: ' + err);
         }
 
-        if(accounts.length === 0) {
-          // Create a new account
-          let _hash = sjcl.hash.sha256.hash;
-          let _pbkdf2 = sjcl.misc.pbkdf2;
+        // Find accounts for current IPFS ID (or create new 'root' account if none exist) that are enabled. 'root' cannot be disabled
+        Account
+          .find({peerId: self.peerId, enabled: true})
+          .populate('cert')
+          .exec(function(err, accounts) {
 
-          console.log('Creating new account for IPFS peer-ID: ' + self.peerId);
-
-          // Password creation for new account
-          var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
-          console.log('Password. ** Write this down for remote sign-in as "root" **: ' + autoPassword);
-          token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
-          var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
-          if(DEBUG) {
-            console.log('Token: ' + token);
-            console.log('Token-hash: ' + tokenHash);
+          if(err) {
+            return reject('Could not search database: ' + err);
           }
-          let _fromBits = sjcl.codec.hex.fromBits;
 
-          // Create new private/public keypairs for account
-          var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
+          if(accounts.length === 0) {
+            // Create a new account
+            let _hash = sjcl.hash.sha256.hash;
+            let _pbkdf2 = sjcl.misc.pbkdf2;
 
-          // Get encryption strings
-          const encSec = _fromBits(e.sec.get());
-          const encPubCouple = e.pub.get();
-          const encPub = _fromBits(encPubCouple.x) + ":" + _fromBits(encPubCouple.y);
+            console.log('Creating new account for IPFS peer-ID: ' + self.peerId);
 
-          // Get signing strings
-          var s = sjcl.ecc.ecdsa.generateKeys(secp256k1, PARANOIA);
-          const sigSec = _fromBits(s.sec.get());
-          const sigPubCouple = s.pub.get();
-          const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
-
-          // New certificate's schema
-          var newCert = new Cert({
-            key: {
-              encrypt: {
-                sec: encSec,
-                pub: encPub
-              },
-              sign: {
-                sec: sigSec,
-                pub: sigPub
-              }
-            },
-            lastExpiration: Date.now() + 14*HOURS_PER_DAY*MINUTES_PER_HOUR*SECONDS_PER_MINUTE*MS_PER_SECOND,
-            peerId: self.peerId
-          });
-
-          // Save for reference
-          newCert.save(function(err, cert) {
-            if(err) {
-              return reject('Could not save account: ' + err);
+            // Password creation for new account
+            var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
+            console.log('Password. ** Write this down for remote sign-in as "root" **: ' + autoPassword);
+            token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
+            var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
+            if(DEBUG) {
+              console.log('Token: ' + token);
+              console.log('Token-hash: ' + tokenHash);
             }
+            let _fromBits = sjcl.codec.hex.fromBits;
 
-            // Create and save new account schema
-            var newAccount = new Account({
-              cert: cert._id,
-              peerId: self.peerId,
-              tokenHash: tokenHash
+            // Create new private/public keypairs for account
+            var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
+
+            // Get encryption strings
+            const encSec = _fromBits(e.sec.get());
+            const encPubCouple = e.pub.get();
+            const encPub = _fromBits(encPubCouple.x) + ":" + _fromBits(encPubCouple.y);
+
+            // Get signing strings
+            var s = sjcl.ecc.ecdsa.generateKeys(secp256k1, PARANOIA);
+            const sigSec = _fromBits(s.sec.get());
+            const sigPubCouple = s.pub.get();
+            const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
+
+            // New certificate's schema
+            var newCert = new Cert({
+              key: {
+                encrypt: {
+                  sec: encSec,
+                  pub: encPub
+                },
+                sign: {
+                  sec: sigSec,
+                  pub: sigPub
+                }
+              },
+              lastExpiration: Date.now() + 14*HOURS_PER_DAY*MINUTES_PER_HOUR*SECONDS_PER_MINUTE*MS_PER_SECOND,
+              peerId: self.peerId
             });
-            newAccount.save(function(err, acc) {
+
+            // Save for reference
+            newCert.save(function(err, cert) {
               if(err) {
                 return reject('Could not save account: ' + err);
               }
-              if(DEBUG) {
-                console.log('Saved new account: ' + acc.peerId);
-              }
-            });
-          });
-        } else {
-          // Account(s) for this IPFS node already exist
-          for(var i = 0; i < accounts.length; i++) {
-            const account = accounts[i];
 
-            // Subscribe IPFS-node to all stored groups for account
-            Group.find({owner: account._id}, function(err, groups) {
-              if(err) {
-                return reject('Could not search database: ' + err);
-              }
-              for(var i = 0; i < groups.length; i++) {
-                self.subscribe(groups[i].name, groups[i].subgroupIndex);
-              }
+              // Create and save new account schema
+              var newAccount = new Account({
+                cert: cert._id,
+                peerId: self.peerId,
+                tokenHash: tokenHash
+              });
+              newAccount.save(function(err, acc) {
+                if(err) {
+                  return reject('Could not save account: ' + err);
+                }
+                if(DEBUG) {
+                  console.log('Saved new account: ' + acc.peerId);
+                }
+              });
             });
+          } else {
+            // Account(s) for this IPFS node already exist
+            for(var i = 0; i < accounts.length; i++) {
+              const account = accounts[i];
+
+              // Subscribe IPFS-node to all stored groups for account
+              Group.find({owner: account._id}, function(err, groups) {
+                if(err) {
+                  return reject('Could not search database: ' + err);
+                }
+                for(var i = 0; i < groups.length; i++) {
+                  self.subscribe(groups[i].name, groups[i].subgroupIndex);
+                }
+              });
+            }
           }
-        }
-      });
+        });
 
-      // Setup routines to run
-      self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
-      self.certIntervalId = setInterval(() => self._publishCert(), 60 * SECONDS_PER_MINUTE * MS_PER_SECOND);
-      return resolve(true);
+        // Setup routines to run
+        self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+        self.certIntervalId = setInterval(() => self._publishCert(), 60 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+        return resolve(true);
+      });
     });
   });
 };
