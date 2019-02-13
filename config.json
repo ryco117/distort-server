@@ -3,7 +3,8 @@
   "port": 6945,
   "ipfsNode": {
     "port": "5001",
-    "address": "localhost"
+    "address": "ipfs"
   },
+  "mongoAddress": "mongodb://mongo:27017/distort",
   "protocolVersion": "0.1.0"
 }

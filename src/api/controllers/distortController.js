@@ -224,7 +224,7 @@ exports.postMessage = function(req, res) {
       return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 400);
     }
 
-    // Must include a 'to' object
+    // Must include one way to identify peer
     if(!req.body.toPeerId && !req.body.toNickname) {
       return sendErrorJSON(res, 'Must include "toPeerId" or "toNickname" in request body', 400);
     }
@@ -633,7 +633,7 @@ exports.addPeer = function(req, res) {
           return sendErrorJSON(res, err, 500);
         }
         if(!cert) {
-          return sendErrorJSON(res, "Cannot add a peer until discovery of their certificate. Please wait for their next routine certificate posti", 400);
+          return sendErrorJSON(res, "Cannot add a peer until discovery of their certificate. Please wait for their next routine certificate post", 400);
         }
 
         // If there exists a certificate for this user already, assign to this peer

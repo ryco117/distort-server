@@ -1,6 +1,5 @@
 var ipfsAPI = require('ipfs-http-client'),
   sjcl = require('sjcl'),
-  prompt = require('password-prompt'),
   config = require('./config'),
   groupTree = require('./groupTree'),
   mongoose = require('mongoose'),
@@ -65,51 +64,39 @@ function hasGroupInPath(groupName, path, groups) {
 distort_ipfs.initIpfs = function(address, port) {
   var self = this;
 
-  // Connect to IPFS node
-  this.ipfsNode = ipfsAPI(address, port);
-  this.ipfsNode.id((err, identity) => {
-    if(err) {
-      throw console.error('Failed to connect to IPFS node: ' + err);
-    }
-    if(DEBUG) {
-      console.log("IPFS node is initialized with peer-ID: " + identity.id);
-    }
-    self.peerId = identity.id;
-
-    // Find accounts for current IPFS ID (or create new 'root' account if none exist) that are enabled. 'root' cannot be disabled
-    Account
-      .find({peerId: self.peerId, enabled: true})
-      .populate('cert')
-      .exec(function(err, accounts) {
-
+  return new Promise((resolve, reject) => {
+    // Connect to IPFS node
+    this.ipfsNode = ipfsAPI(address, port);
+    this.ipfsNode.id((err, identity) => {
       if(err) {
-        throw console.error(err);
+        return reject('Failed to connect to IPFS node: ' + err);
       }
+      if(DEBUG) {
+        console.log("IPFS node has peer-ID: " + identity.id);
+      }
+      self.peerId = identity.id;
 
-      if(accounts.length === 0) {
-        // Create a new account
-        let _hash = sjcl.hash.sha256.hash;
-        let _pbkdf2 = sjcl.misc.pbkdf2;
+      // Find accounts for current IPFS ID (or create new 'root' account if none exist) that are enabled. 'root' cannot be disabled
+      Account
+        .find({peerId: self.peerId, enabled: true})
+        .populate('cert')
+        .exec(function(err, accounts) {
 
-        console.log('Creating new account for IPFS peer-ID: ' + self.peerId);
+        if(err) {
+          return reject('Could not search database: ' + err);
+        }
 
-        // Password creation for new account
-        new Promise(function(resolve, reject) {
-          return prompt('Password (empty for random string): ', {method: "mask"}).then(function(password) {
-            if(!password) {
-              var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(6));
-              console.log('Password (write this down for remote sign-in): ' + autoPassword);
-              resolve(sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000)));
-            } else {
-              prompt('Repeat Password: ', {method: "mask"}).then(function(passwordR) {
-                if(password !== passwordR) {
-                   return reject(new Error('Passwords do not match, account creation aborted'));
-                }
-                resolve(sjcl.codec.base64.fromBits(_pbkdf2(password, self.peerId, 1000)));
-              });
-            }
-          });
-        }).then(function(token) {
+        if(accounts.length === 0) {
+          // Create a new account
+          let _hash = sjcl.hash.sha256.hash;
+          let _pbkdf2 = sjcl.misc.pbkdf2;
+
+          console.log('Creating new account for IPFS peer-ID: ' + self.peerId);
+
+          // Password creation for new account
+          var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
+          console.log('Password. ** Write this down for remote sign-in as "root" **: ' + autoPassword);
+          token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
           var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
           if(DEBUG) {
             console.log('Token: ' + token);
@@ -150,7 +137,7 @@ distort_ipfs.initIpfs = function(address, port) {
           // Save for reference
           newCert.save(function(err, cert) {
             if(err) {
-              throw console.error(err);
+              return reject('Could not save account: ' + err);
             }
 
             // Create and save new account schema
@@ -161,35 +148,36 @@ distort_ipfs.initIpfs = function(address, port) {
             });
             newAccount.save(function(err, acc) {
               if(err) {
-                throw console.error(err);
+                return reject('Could not save account: ' + err);
               }
               if(DEBUG) {
                 console.log('Saved new account: ' + acc.peerId);
               }
             });
           });
-        });
-      } else {
-        // Account(s) for this IPFS node already exist
-        for(var i = 0; i < accounts.length; i++) {
-          const account = accounts[i];
+        } else {
+          // Account(s) for this IPFS node already exist
+          for(var i = 0; i < accounts.length; i++) {
+            const account = accounts[i];
 
-          // Subscribe IPFS-node to all stored groups for account
-          Group.find({owner: account._id}, function(err, groups) {
-            if(err) {
-              throw console.error(err);
-            }
-            for(var i = 0; i < groups.length; i++) {
-              self.subscribe(groups[i].name, groups[i].subgroupIndex);
-            }
-          });
+            // Subscribe IPFS-node to all stored groups for account
+            Group.find({owner: account._id}, function(err, groups) {
+              if(err) {
+                return reject('Could not search database: ' + err);
+              }
+              for(var i = 0; i < groups.length; i++) {
+                self.subscribe(groups[i].name, groups[i].subgroupIndex);
+              }
+            });
+          }
         }
-      }
-    });
+      });
 
-    // Setup routines to run
-    self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
-    self.certIntervalId = setInterval(() => self._publishCert(), 60 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+      // Setup routines to run
+      self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+      self.certIntervalId = setInterval(() => self._publishCert(), 60 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+      return resolve(true);
+    });
   });
 };
 
@@ -411,7 +399,7 @@ function subscribeMessageHandler(msg) {
   }
 
   if(!distort_ipfs.peerId) {
-    throw new Error('Cannot handle received messages without an active account');
+    throw console.error('Cannot handle received messages without an active account');
   }
 
   const from = msg.from;
@@ -458,7 +446,7 @@ function subscribeMessageHandler(msg) {
         plaintext = JSON.parse(plaintext);
         plaintext = plaintext.m;
         if(typeof plaintext !== "string") {
-          throw new Error('Failed to decrypt');
+          throw console.error('Failed to decrypt');
         }
 
         cert = certs[i];
@@ -483,7 +471,7 @@ function subscribeMessageHandler(msg) {
     // Find group to save message to
     var groupPattern = /^(.*)-(all|\d+)$/;
     if(!groupPattern.test(fromGroup)) {
-      throw new Error("Received message on improper group: " + fromGroup);
+      throw console.error("Received message on improper group: " + fromGroup);
     }
     var groupName = groupPattern.exec(fromGroup)[1];
     var groupIndex = groupPattern.exec(fromGroup)[2];
@@ -513,7 +501,7 @@ function subscribeMessageHandler(msg) {
 
       group = group[0];
       if(!group) {
-        throw new Error('Could not find a subscribed group: ' + JSON.stringify(fromGroup));
+        throw console.error('Could not find a subscribed group: ' + JSON.stringify(fromGroup));
       }
 
       // Determine conversation of message, or create a new one
@@ -667,7 +655,7 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
 
   this.ipfsNode.pubsub.subscribe(topic, subscribeMessageHandler, {discover: true}, err => {
     if(err) {
-      throw new Error('Failed to subscribe to: ' + topic, err);
+      throw console.error('Failed to subscribe to: ' + topic, err);
     }
 
     // Remeber number of accounts requiring these certs
@@ -675,7 +663,7 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
 
     this.ipfsNode.pubsub.subscribe(topicCerts, certificateMessageHandler, {discover: true}, err => {
       if(err) {
-        throw new Error('Failed to subscribe to: ' + topicCerts, err);
+        throw console.error('Failed to subscribe to: ' + topicCerts, err);
       }
       if(DEBUG) {
         console.log('Now subscribed to: ' + topic);
