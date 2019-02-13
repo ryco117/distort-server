@@ -4,7 +4,7 @@
 ## REST API
 ### Unauthenticated
 * **/ipfs**
-    * **GET**
+    * **GET** - Fetch IPFS node ID
         - Return: string, the actively connected IPFS node's ID
         
 ### Authenticated

@@ -101,7 +101,7 @@ distort_ipfs.initIpfs = function(address, port) {
 
             // Password creation for new account
             var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
-            console.log('Password. ** Write this down for remote sign-in as "root" **: ' + autoPassword);
+            console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
             token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
             var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
             if(DEBUG) {
@@ -561,8 +561,8 @@ function subscribeMessageHandler(msg) {
 };
 function certificateMessageHandler(cert) {
   if(DEBUG) {
-    console.log('Received message: ' + cert.data);
-    console.log('Message from: ' + cert.from);
+    console.log('Received certificate: ' + cert.data);
+    console.log('Certificate from: ' + cert.from);
   }
 
   const from = cert.from;
