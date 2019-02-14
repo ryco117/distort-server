@@ -593,7 +593,7 @@ exports.fetchPeers = function(req, res) {
       // TODO: replace peers[i].cert with peers[i].cert.groups
 
       res.json(peers);
-    })
+    });
   });
 };
 

@@ -364,31 +364,34 @@ distort_ipfs._publishCert = function() {
             console.error('Could not save updated cert expiration: ' + err);
           }
 
-          // Create cert for active account
-          var cert = {
-            v: PROTOCOL_VERSION,
-            fromAccount: acct.accountName,
-            key: {
-              encrypt: {
-                pub: acct.cert.key.encrypt.pub
+          // If account has an active group, publish certificate over it
+          if(acct.activeGroup) {
+            // Create cert for active account
+            var cert = {
+              v: PROTOCOL_VERSION,
+              fromAccount: acct.accountName,
+              key: {
+                encrypt: {
+                  pub: acct.cert.key.encrypt.pub
+                },
+                sign: {
+                  pub: acct.cert.key.sign.pub
+                }
               },
-              sign: {
-                pub: acct.cert.key.sign.pub
-              }
-            },
-            expiration: acct.cert.lastExpiration,
-            groups: acct.cert.groups
-          };
+              expiration: acct.cert.lastExpiration,
+              groups: acct.cert.groups
+            };
 
-          if(DEBUG) {
-            console.log("Packaged Certificate: " + JSON.stringify(cert));
-          }
+            if(DEBUG) {
+              console.log("Packaged Certificate: " + JSON.stringify(cert));
+            }
 
-          // Publish message to IPFS
-          try {
-            distort_ipfs.publish(nameToCertTopic(acct.activeGroup.name), JSON.stringify(cert));
-          } catch(err) {
-            return console.error(err);
+            // Publish message to IPFS
+            try {
+              distort_ipfs.publish(nameToCertTopic(acct.activeGroup.name), JSON.stringify(cert));
+            } catch(err) {
+              return console.error(err);
+            }
           }
         });
       }
