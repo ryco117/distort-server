@@ -1,6 +1,6 @@
 "use strict";
 
-var sjcl = require('sjcl');
+var sjcl = require('./sjcl');
 
 const MAX_PATH_DEPTH = 6;
 exports.MAX_PATH_DEPTH = 6;

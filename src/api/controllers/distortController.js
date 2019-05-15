@@ -1,7 +1,7 @@
 "use strict";
 
 var mongoose = require('mongoose'),
-  sjcl = require('sjcl'),
+  sjcl = require('../../sjcl'),
   distort_ipfs = require('../../distort-ipfs'),
   groupTree = require('../../groupTree'),
   config = require('../../config'),

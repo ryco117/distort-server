@@ -1,6 +1,6 @@
 "use strict";
 
-var sjcl = require('sjcl'),
+var sjcl = require('../../sjcl'),
   distort_ipfs = require('../../distort-ipfs'),
   config = require('../../config'),
   mongoose = require('mongoose'),

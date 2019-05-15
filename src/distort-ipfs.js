@@ -1,5 +1,5 @@
 var ipfsAPI = require('ipfs-http-client'),
-  sjcl = require('sjcl'),
+  sjcl = require('./sjcl'),
   config = require('./config'),
   groupTree = require('./groupTree'),
   mongoose = require('mongoose'),

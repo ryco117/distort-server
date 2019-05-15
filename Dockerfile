@@ -10,4 +10,4 @@ RUN apk --no-cache --virtual build-dependencies add \
     g++ \
     && npm install \
     && apk del build-dependencies
-COPY ./sjcl/sjcl.js ./node_modules/sjcl.js
+COPY ./sjcl/sjcl.js ./src/sjcl.js
