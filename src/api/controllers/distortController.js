@@ -497,8 +497,13 @@ exports.readConversationMessagesInRange = function(req, res) {
 
 // Retrieve account information
 exports.fetchAccount = function(req, res) {
+  req.body.accountName = req.body.accountName || req.headers.accountname;
+  if(req.headers.accountname !== 'root' && req.headers.accountname !== req.body.accountName) {
+    return sendErrorJSON(res, 'Not authorized to view this account', 403);
+  }
+
   Account
-    .findOne({peerId: req.headers.peerid, accountName: req.headers.accountname})
+    .findOne({peerId: req.headers.peerid, accountName: req.body.accountName})
     .select('accountName activeGroup enabled peerId')
     .exec(function(err, acct) {
     if(err) {
@@ -512,7 +517,7 @@ exports.fetchAccount = function(req, res) {
 
 // Create new account (if 'root')
 exports.updateAccount = function(req, res) {
-  req.body.accountName = req.body.accountName || 'root';
+  req.body.accountName = req.body.accountName || req.headers.accountname;
   if(req.headers.accountname !== 'root' && req.headers.accountname !== req.body.accountName) {
     return sendErrorJSON(res, 'Not authorized to update this account', 403);
   }
@@ -522,7 +527,7 @@ exports.updateAccount = function(req, res) {
       return sendErrorJSON(res, err, 500);
     }
     if(!account) {
-      return sendErrorJSON(res, 'Account "' + req.body.accountName + '" does not exist', 400);
+      return sendErrorJSON(res, 'Account "' + req.headers.peerid + (!!req.body.accountName ? ':' + req.body.accountName : '') + '" does not exist', 400);
     }
 
     // set active group of account
@@ -589,8 +594,6 @@ exports.fetchPeers = function(req, res) {
       if(err) {
         return sendErrorJSON(res, err, 500);
       }
-
-      // TODO: replace peers[i].cert with peers[i].cert.groups
 
       res.json(peers);
     });
@@ -676,7 +679,7 @@ exports.removePeer = function(req, res) {
 
       const peerFullTitle = req.body.peerId + (!!req.body.accountName ? ':' + accountName : "");
       if(!peer) {
-        return sendErrorJSON(res, 'Account does not have peer: ' + peerFullTitle, 400);
+        return sendErrorJSON(res, 'Account has no entry for peer: ' + peerFullTitle, 400);
       }
 
       Peer.remove({owner: acct._id, peerId: req.body.peerId, accountName: accountName}, function(err, delStats) {

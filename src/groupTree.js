@@ -2,8 +2,8 @@
 
 var sjcl = require('./sjcl');
 
-const MAX_PATH_DEPTH = 6;
-exports.MAX_PATH_DEPTH = 6;
+const MAX_PATH_DEPTH = 5;
+exports.MAX_PATH_DEPTH = MAX_PATH_DEPTH;
 const MAX_INDEX = Math.pow(2, MAX_PATH_DEPTH + 1) - 2;
 exports.MAX_INDEX = MAX_INDEX;
 
