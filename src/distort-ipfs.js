@@ -62,12 +62,12 @@ function hasGroupInPath(groupName, path, groups) {
   return false;
 }
 
-distort_ipfs.initIpfs = function(address, port) {
+distort_ipfs.initIpfs = function(ipfsConfig) {
   var self = this;
 
   return new Promise((resolve, reject) => {
     // Connect to IPFS node
-    self.ipfsNode = ipfsAPI(address, port);
+    self.ipfsNode = ipfsAPI(ipfsConfig.address, ipfsConfig.port);
     self.ipfsNode.id((err, identity) => {
       if(err) {
         return reject('Failed to connect to IPFS node: ' + err);
@@ -81,6 +81,22 @@ distort_ipfs.initIpfs = function(address, port) {
       self.ipfsNode.config.set('Pubsub.StrictSignatureVerification', true, (err) => {
         if(err) {
           reject('Could not ensure key verification: ' + err);
+        }
+
+        // Attempt to bootstrap specified peers
+        if(typeof (ipfsConfig.bootstrap) === "object" && parseInt(ipfsConfig.bootstrap.length) > 0) {
+          for(var i = 0; i < parseInt(ipfsConfig.bootstrap.length); i++) {
+            const j = i;
+            self.ipfsNode.swarm.connect(ipfsConfig.bootstrap, function (err) {
+              if(DEBUG) {
+                if(err) {
+                  console.error(err);
+                } else {
+                  console.log("Connected to peer " + ipfsConfig.bootstrap[j]);
+                }
+              }
+            });
+          }
         }
 
         // Find accounts for current IPFS ID (or create new 'root' account if none exist) that are enabled. 'root' cannot be disabled
@@ -182,7 +198,7 @@ distort_ipfs.initIpfs = function(address, port) {
 
         // Setup routines to run
         self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
-        self.certIntervalId = setInterval(() => self._publishCert(), 60 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+        self.certIntervalId = setInterval(() => self._publishCert(), 30 * SECONDS_PER_MINUTE * MS_PER_SECOND);
         return resolve(true);
       });
     });
