@@ -7,6 +7,7 @@ var ipfsAPI = require('ipfs-http-client'),
   Cert = mongoose.model('Certs'),
   Conversation = mongoose.model('Conversations'),
   Group = mongoose.model('Groups'),
+  Peer = mongoose.model('Peers'),
   InMessage = mongoose.model('InMessages'),
   OutMessage = mongoose.model('OutMessages');
 
