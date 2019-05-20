@@ -1,6 +1,36 @@
 # DistoRt Homeserver
 ([main page](https://ryco117.github.io/distort-server))
 
+## Server Overview
+### Configuration
+The server is configurable by the top-level JSON file `config.json`. It features several features:
+* `debug`: boolean; print debug-level information to the console iff this key has a positive truthyness value
+* `ipfsNode`: object; information on the IPFS node to use for IPFS API and as the node's identity
+    * `address`: string; IP or domain address of the IPFS node to use
+    * `bootstrap`: array of strings; A list of [IPFS multiaddrs](https://github.com/ipfs/go-ipfs-addr) to connect to at server start, 
+    to help bootstrap connectivity between DistoRt peers
+    * `port`: positive integer; API port of the IPFS node to use
+* `mongoAddress`: string; the string to use to connect to the MongoDB to use. Eg., "mongodb://mongo:27017/distort"
+* `port`: positive integer; the local port to open for REST API calls
+* `protocolVersion`: string; the version string of the protocol this server will implement. Eg., "0.1.0"
+
+### Launch
+1. Connect to the configured MongoDB to use for node storage. Retry every 5 seconds until successful connection
+1. Attempt to successfully perform the following actions without failure. Retry every 5 seconds until completion without having to abort
+    1. Connect to the configured IPFS node that will be used as the node's broadcasting identity and gateway
+    1. [Force the connected IPFS node to verify pubsub signatures](https://github.com/ipfs/go-ipfs/blob/c10f043f3bb7a48e8b43e7f4e35e1cbccf762c68/docs/experimental-features.md#message-signing) 
+so that trust of IPFS identities implies trust of the certificates they publish
+    1. (Optional) Connect to configured bootstrap IPFS nodes. Failure to connect to bootstrap nodes does not affect success of launch
+    1. Determine if there already exists a root account for the given IPFS identity.
+        * *If so...* First, determine which local accounts are enabled and have the IPFS identity of the connected node. 
+        For each account, subscribe the IPFS node to the pubsub channels they have added
+        * *Otherwise...* Create a root account for the in-use IPFS identity. 
+        The default password mechanism is to generate a random 128-bit string and convert it to Base64. It is not stored in the database. 
+        The PBKDF2 hash of this password is used as the authentication token. It is not stored in the database. 
+        The SHA256 hash of this token is stored in the database for later comparison when REST API calls are made using said token. 
+        Finally, create a new certificate and save the newly created account and certificate details to the database
+    1. Initialize REST paths and launch server on configured port
+
 ## REST API
 
 ### Error Codes
@@ -15,7 +45,7 @@
     - The client attempted to view/modify an account it cannot access
     - ... attempted to authorize as an IPFS identity different from that of the connected IPFS node. This is to ensure client knows their broadcasting identity
 * **500** - Internal Server Error
-    - An internal server error occured and caused the request to be abandoned prematurely
+    - An internal server error occurred and caused the request to be abandoned prematurely
 
 ---
 

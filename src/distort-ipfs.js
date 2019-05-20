@@ -62,8 +62,9 @@ function hasGroupInPath(groupName, path, groups) {
   return false;
 }
 
-distort_ipfs.initIpfs = function(ipfsConfig) {
-  var self = this;
+distort_ipfs.initIpfs = function() {
+  const self = this;
+  const ipfsConfig = config.ipfsNode;
 
   return new Promise((resolve, reject) => {
     // Connect to IPFS node
@@ -109,97 +110,101 @@ distort_ipfs.initIpfs = function(ipfsConfig) {
             return reject('Could not search database: ' + err);
           }
 
-          if(accounts.length === 0) {
-            // Create a new account
-            let _hash = sjcl.hash.sha256.hash;
-            let _pbkdf2 = sjcl.misc.pbkdf2;
+          return new Promise((resolve, reject2) => {
+            if(accounts.length === 0) {
+              // Create a new account
+              let _hash = sjcl.hash.sha256.hash;
+              let _pbkdf2 = sjcl.misc.pbkdf2;
 
-            console.log('Creating new account for IPFS peer-ID: ' + self.peerId);
+              console.log('Creating new account for IPFS peer-ID: ' + self.peerId);
 
-            // Password creation for new account
-            var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
-            console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
-            token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
-            var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
-            if(DEBUG) {
-              console.log('Token: ' + token);
-              console.log('Token-hash: ' + tokenHash);
-            }
-            let _fromBits = sjcl.codec.hex.fromBits;
-
-            // Create new private/public keypairs for account
-            var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
-
-            // Get encryption strings
-            const encSec = _fromBits(e.sec.get());
-            const encPubCouple = e.pub.get();
-            const encPub = _fromBits(encPubCouple.x) + ":" + _fromBits(encPubCouple.y);
-
-            // Get signing strings
-            var s = sjcl.ecc.ecdsa.generateKeys(secp256k1, PARANOIA);
-            const sigSec = _fromBits(s.sec.get());
-            const sigPubCouple = s.pub.get();
-            const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
-
-            // New certificate's schema
-            var newCert = new Cert({
-              key: {
-                encrypt: {
-                  sec: encSec,
-                  pub: encPub
-                },
-                sign: {
-                  sec: sigSec,
-                  pub: sigPub
-                }
-              },
-              lastExpiration: Date.now() + 14*HOURS_PER_DAY*MINUTES_PER_HOUR*SECONDS_PER_MINUTE*MS_PER_SECOND,
-              peerId: self.peerId
-            });
-
-            // Save for reference
-            newCert.save(function(err, cert) {
-              if(err) {
-                return reject('Could not save account: ' + err);
+              // Password creation for new account
+              var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
+              console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
+              token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
+              var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
+              if(DEBUG) {
+                console.log('Token: ' + token);
+                console.log('Token-hash: ' + tokenHash);
               }
+              let _fromBits = sjcl.codec.hex.fromBits;
 
-              // Create and save new account schema
-              var newAccount = new Account({
-                cert: cert._id,
-                peerId: self.peerId,
-                tokenHash: tokenHash
-              });
-              newAccount.save(function(err, acc) {
-                if(err) {
-                  return reject('Could not save account: ' + err);
-                }
-                if(DEBUG) {
-                  console.log('Saved new account: ' + acc.peerId);
-                }
-              });
-            });
-          } else {
-            // Account(s) for this IPFS node already exist
-            for(var i = 0; i < accounts.length; i++) {
-              const account = accounts[i];
+              // Create new private/public keypairs for account
+              var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
 
-              // Subscribe IPFS-node to all stored groups for account
-              Group.find({owner: account._id}, function(err, groups) {
-                if(err) {
-                  return reject('Could not search database: ' + err);
-                }
-                for(var i = 0; i < groups.length; i++) {
-                  self.subscribe(groups[i].name, groups[i].subgroupIndex);
-                }
+              // Get encryption strings
+              const encSec = _fromBits(e.sec.get());
+              const encPubCouple = e.pub.get();
+              const encPub = _fromBits(encPubCouple.x) + ":" + _fromBits(encPubCouple.y);
+
+              // Get signing strings
+              var s = sjcl.ecc.ecdsa.generateKeys(secp256k1, PARANOIA);
+              const sigSec = _fromBits(s.sec.get());
+              const sigPubCouple = s.pub.get();
+              const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
+
+              // New certificate's schema
+              var newCert = new Cert({
+                key: {
+                  encrypt: {
+                    sec: encSec,
+                    pub: encPub
+                  },
+                  sign: {
+                    sec: sigSec,
+                    pub: sigPub
+                  }
+                },
+                lastExpiration: Date.now() + 14*HOURS_PER_DAY*MINUTES_PER_HOUR*SECONDS_PER_MINUTE*MS_PER_SECOND,
+                peerId: self.peerId
               });
+
+              // Save for reference
+              newCert.save(function(err, cert) {
+                if(err) {
+                  return reject2('Could not save account: ' + err);
+                }
+
+                // Create and save new account schema
+                var newAccount = new Account({
+                  cert: cert._id,
+                  peerId: self.peerId,
+                  tokenHash: tokenHash
+                });
+                newAccount.save(function(err, acc) {
+                  if(err) {
+                    return reject2('Could not save account: ' + err);
+                  }
+                  if(DEBUG) {
+                    console.log('Saved new account: ' + acc.peerId);
+                  }
+                });
+              });
+            } else {
+              // Account(s) for this IPFS node already exist
+              for(var i = 0; i < accounts.length; i++) {
+                const account = accounts[i];
+
+                // Subscribe IPFS-node to all stored groups for account
+                Group.find({owner: account._id}, function(err, groups) {
+                  if(err) {
+                    return reject2('Could not search database: ' + err);
+                  }
+                  for(var i = 0; i < groups.length; i++) {
+                    self.subscribe(groups[i].name, groups[i].subgroupIndex);
+                  }
+                });
+              }
             }
-          }
+          }).catch(err => {
+            return reject(err);
+          }).then(() => {
+            // Setup routines to run
+            self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+            self.certIntervalId = setInterval(() => self._publishCert(), 30 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+            return resolve(true);
+          });
         });
-
-        // Setup routines to run
-        self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
-        self.certIntervalId = setInterval(() => self._publishCert(), 30 * SECONDS_PER_MINUTE * MS_PER_SECOND);
-        return resolve(true);
       });
     });
   });
@@ -635,7 +640,8 @@ function certificateMessageHandler(cert) {
           throw console.error(err);
         }
         if(DEBUG) {
-          console.log("Invalidated: " + updatedCount + " certs for: " + from);
+          // TODO: replace JSON.stringify with something more elegant once I know what the object structure looks like
+          console.log("Invalidated " + JSON.stringify(updatedCount) + " certificates for: " + from + ":" + cert.fromAccount);
         }
 
         // Create new certificate from the message
@@ -677,21 +683,32 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
   const topicCerts = nameToCertTopic(name);
   topic = nameAndSubgroupToTopic(name, subgroupIndex);
 
-  // Remeber number of accounts requiring this channel
-  this._subscribedTo[topic] = this._subscribedTo[topic] > 0 ? this._subscribedTo[topic]+1 : 1;
-
   this.ipfsNode.pubsub.subscribe(topic, subscribeMessageHandler, {discover: true}, err => {
     if(err) {
       throw console.error('Failed to subscribe to: ' + topic, err);
     }
 
-    // Remeber number of accounts requiring these certs
-    this._subscribedToCert[topic] = this._subscribedToCert[topic] > 0 ? this._subscribedToCert[topic]+1 : 1;
+    // Remeber number of accounts requiring this channel
+    if(this._subscribedTo[topic] > 0) {
+      this._subscribedTo[topic]++;
+      return;
+    } else {
+      this._subscribedTo[topic] = 1;
+    };
 
     this.ipfsNode.pubsub.subscribe(topicCerts, certificateMessageHandler, {discover: true}, err => {
       if(err) {
         throw console.error('Failed to subscribe to: ' + topicCerts, err);
       }
+
+      // Remeber number of accounts requiring this channel
+      if(this._subscribedTo[topicCerts] > 0) {
+        this._subscribedTo[topicCerts]++;
+        return;
+      } else {
+        this._subscribedTo[topicCerts] = 1;
+      };
+
       if(DEBUG) {
         console.log('Now subscribed to: ' + topic);
       }
@@ -703,16 +720,6 @@ distort_ipfs.unsubscribe = function(topic, subgroupIndex) {
   const topicCerts = nameToCertTopic(topic);
   topic = nameAndSubgroupToTopic(topic, subgroupIndex);
 
-  // Only unsubscribe after no more accounts require it
-  if(this._subscribedTo[topic] > 0) {
-    this._subscribedTo[topic] -= 1;
-    if(this._subscribedTo[topic] > 0) {
-      return
-    }
-  } else {
-    return;
-  }
-
   this.ipfsNode.pubsub.unsubscribe(topic, subscribeMessageHandler, err => {
     if(err) {
       throw new Error('Failed to unsubscribe from: ' + topic, err);
@@ -722,7 +729,7 @@ distort_ipfs.unsubscribe = function(topic, subgroupIndex) {
     if(this._subscribedToCert[topic] > 0) {
       this._subscribedToCert[topic] -= 1;
       if(this._subscribedToCert[topic] > 0) {
-        return
+        return;
       }
     } else {
       return;
@@ -732,6 +739,16 @@ distort_ipfs.unsubscribe = function(topic, subgroupIndex) {
       if(err) {
         throw new Error('Failed to unsubscribe from: ' + topicCerts, err);
       }
+
+      if(this._subscribedToCert[topicCerts] > 0) {
+        this._subscribedToCert[topicCerts] -= 1;
+        if(this._subscribedToCert[topicCerts] > 0) {
+          return;
+        }
+      } else {
+        return;
+      }
+
       if(DEBUG) {
         console.log('Unsubscribed from: ' + topic);
       }

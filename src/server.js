@@ -23,7 +23,7 @@ const connectDatabase = () => {
   mongoose.connect(config.mongoAddress, {useNewUrlParser: true}).then(() => {
     console.log('Connected to Mongo database');
     const connectIPFS = () => {
-      distort_ipfs.initIpfs(config.ipfsNode).then(() => {
+      distort_ipfs.initIpfs().then(() => {
         console.log('Initialized server instance');
 
         // Setup middleware
