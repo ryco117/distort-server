@@ -91,7 +91,7 @@ distort_ipfs.initIpfs = function() {
             self.ipfsNode.swarm.connect(ipfsConfig.bootstrap, function (err) {
               if(DEBUG) {
                 if(err) {
-                  console.error(err);
+                  console.error("Bootstrap to peer failed: " + ipfsConfig.bootstrap[j]);
                 } else {
                   console.log("Connected to peer " + ipfsConfig.bootstrap[j]);
                 }
@@ -110,7 +110,7 @@ distort_ipfs.initIpfs = function() {
             return reject('Could not search database: ' + err);
           }
 
-          return new Promise((resolve, reject2) => {
+          return new Promise((resolve2, reject2) => {
             if(accounts.length === 0) {
               // Create a new account
               let _hash = sjcl.hash.sha256.hash;
@@ -177,6 +177,7 @@ distort_ipfs.initIpfs = function() {
                   }
                   if(DEBUG) {
                     console.log('Saved new account: ' + acc.peerId);
+                    return resolve2(true);
                   }
                 });
               });
@@ -193,16 +194,17 @@ distort_ipfs.initIpfs = function() {
                   for(var i = 0; i < groups.length; i++) {
                     self.subscribe(groups[i].name, groups[i].subgroupIndex);
                   }
+                  return resolve2(true);
                 });
               }
             }
-          }).catch(err => {
-            return reject(err);
           }).then(() => {
             // Setup routines to run
             self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
             self.certIntervalId = setInterval(() => self._publishCert(), 30 * SECONDS_PER_MINUTE * MS_PER_SECOND);
             return resolve(true);
+          }).catch(err => {
+            throw reject(err);
           });
         });
       });

@@ -30,10 +30,27 @@ so that trust of IPFS identities implies trust of the certificates they publish
         The SHA256 hash of this token is stored in the database for later comparison when REST API calls are made using said token. 
         Finally, create a new certificate and save the newly created account and certificate details to the database
     1. Initialize REST paths and launch server on configured port
+    
+### Runtime Actions
+* **Handle API Requests** - Perform actions specified by the REST requests received on the configured port. Details described below
+* **Dequeue Messages** - Every five minutes, dequeue a message for every enabled account with this IPFS identity on its active group. If a respective account has no active group, then nothing is dequeued for it. 
+When dequeuing a message, the server must first generate a random path through the binary group tree (with root `0` and `6` layers, for a total of 63 vertices, numbered breadth first). Then the server must dequeue the 
+first message in their queue which is to be sent to a peer whose node in the group intersects the path. If no messages to dequeue have valid recipient for the generated path, or if the message queue is empty, then a 
+random message is generated and encrypted to an ephemeral key, then broadcast to all channels on the generated path. If a message does meet the criteria, it is encrypted to the recipient and padded with additional bytes so all 
+real and fake messages are of equal size, then broadcast on all channels on the generated path.
+* **Receive Messages** - Ensure message was published with a supported protocol version. Attempt to decrypt the message with all non-expired keys that match the IPFS identity is use. 
+If there is a local account whose certificate decrypts the message, store the message under a conversation uniquely identified by the local account, peer account, and group over which the message was sent.
+* **Renew certificates** - Every thirty minutes, for every enabled account with this IPFS identity, update its certificate's expiry date to be two weeks from the current time. Then, for each of those account, publish the 
+certificate over its active group's certificate channel. If the account does not have an active group, its certificate will not be broadcast. Each certificate broadcast contains a public encryption key, 
+a public signing key (not used), the new expiration, and the group nodes the account is currently subscribed to (of which the active account is an element of)
+* **Receive certificates** - Ensure certificate was published with a supported protocol version. If the certificate's public keys are stored locally update the certificate's expiry date and groups. If the certificate is new, 
+invalidate any other certificates this peer has published and save the new one.
 
 ## REST API
 
-### Error Codes
+### Response Codes
+* **200** - Request was performed successfully
+    - This response code is returned if and only if the request was performed without error
 * **400** - Bad Request
     - The client failed to specify required fields
     - ... fields were incorrectly formatted
@@ -46,6 +63,42 @@ so that trust of IPFS identities implies trust of the certificates they publish
     - ... attempted to authorize as an IPFS identity different from that of the connected IPFS node. This is to ensure client knows their broadcasting identity
 * **500** - Internal Server Error
     - An internal server error occurred and caused the request to be abandoned prematurely
+    
+### Returned JSON Objects
+* **Account Object**
+    - `accountName`: string; the name of the account under of current IPFS identity
+    - `enabled`: boolean; true iff the account is set to actively listen for and send messages
+    - `_id`: string; hash-string uniquely identifying the local account object
+    - `peerId`: string; the IPFS identity of the account
+    - `activeGroup`: string; the unique identifier of the group which is active. This ID is equivalent to the `_id` field of a group object
+* **Certificate Object**
+    - `groups`: array of strings; the set of groups subscribed to by the certificate's owner
+* **Conversation Object**
+    - `_id`: string; hash-string uniquely identifying the local conversation object
+    - `accountName`: string; the name of the account under the peer's IPFS identity
+    - `height`: non negative integer; the number of messages stored locally in the conversation
+* **Error Object**
+    - `error`: string; error message. Every response with a status code other than `200` will contain an error object
+* **Group Object**
+    - `_id`: string; hash string uniquely identifying the local group object
+    - `name`: string; the name of the distort group
+    - `subgroup`: non negative integer; the index of the node within the group tree that the account belongs to
+* **Message Object**
+    - (Received message,*Not implemented always false*) `verified`: boolean; true iff the server has verified that the message was signed with the message sender's certificate
+    - (Sent message) `status`: exactly one of strings `enqueued`,`cancelled`,`sent`; 
+    the current status of the outgoing message. It is either enqueued to be sent, sent, or cancelled (*cancellation not implemented*)
+    - `index`: non negative integer; zero-indexed position of the message chronologically 
+    - `message`: string; the plaintext contents of the message
+    - (Received message) `dateReceived`: date-string; **YYYY-MM-DDThh:mm:ss.sssZ** representation of UTC time the message was received
+    - (Sent message) `lastStatusChange`: date-string; **YYYY-MM-DDThh:mm:ss.sssZ** representation of the last time this message's status was changed
+* **Peer Object**
+    - `accountName`: string; the name of the account under of IPFS identity. Defaults to `root`
+    - `_id`: string; hash string uniquely identifying the local peer object
+    - (Optional) `nickname`: string; a locally unique identifier for this account
+    - `peerId`: string; the IPFS identity of the peer
+    - `cert`: certificate object; contains information about the peer's certificate
+* **Success Message Object**
+    - `message`: string; success message. Only used as a success response to requests to remove a peer or to leave from a group
 
 ---
 
@@ -58,7 +111,8 @@ Request paths:
 ### Authenticated Requests
 Note: Authenticated requests require the following headers: 
 * `peerid`: string; the IPFS node ID of the account to authorize as. Must be equal to the IPFS ID of the current node in use
-* `authtoken`: string; the token used to authenticate all requests. Recommended to be equal to the Base64 encoding of a hash of the account's password. Hash algorithm is PBKDF2 using SHA-256. The salt is the IPFS node ID (equivalent to `peerid`), and the work-constant is `1000`
+* `authtoken`: string; the token used to authenticate all requests. Recommended to be equal to the Base64 encoding of a hash of the account's password. 
+Hash algorithm is PBKDF2 using SHA-256. The salt is the IPFS node ID (equivalent to `peerid`), and the work-constant is `1000`
 * (Optional) `accountname`: string; the name of the account to authorize as. Will default to `root` if this field is not specified or is the empty string
 
 Request paths:
@@ -92,11 +146,13 @@ Request paths:
         - Additional request headers:
             * `conversationpeerid`: string; the IPFS node ID of the peer being conversed with in group `group-name`
             * (Optional) `conversationaccountname`: string; the account name of the peer being conversed with. Defaults to `root`
-	    - Return: JSON object containing two fields, `in` and `out`, each of which are arrays of received and sent message objects respectively; contains all received and sent messages in the uniquely specified conversation that have indices between `index-start` and `index-end` inclusively
+	    - Return: JSON object containing three fields, `conversation`, `in`, and `out`; the first is a string ID uniquely identifying the conversation's local object. 
+	    The latter two are arrays of received and sent message objects respectively.
+	    contains all received and sent messages in the uniquely specified conversation that have indices between `index-start` and `index-end` inclusively
 * **/account**
 	* **GET** - Fetch account
 	    - Body Parameters:
-	        - (Optional) `accountName`: string; the name of the account to retreive. Only the `root` account can retrieve other accounts
+	        - (Optional) `accountName`: string; the name of the account to retrieve. Only the `root` account can retrieve other accounts
         - Return: account object; details of the account that authorized the request, or the specified account if `root`
 	* **PUT** - Update account settings
 	    - Body Parameters:

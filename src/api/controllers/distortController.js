@@ -69,6 +69,7 @@ exports.listGroups = function(req, res) {
     // Pointless to reinform of self as owner
     for(var i = 0; i < groups.length; i++) {
       delete groups[i].owner;
+      delete groups[i]['__v'];
     }
 
     res.json(groups);
@@ -471,7 +472,7 @@ exports.readConversationMessagesInRange = function(req, res) {
         .find({'conversation': conversation._id})
         .where('index').gte(indexStart).lte(indexEnd)
         .sort('index')
-        .select('dateReceived index message verified')
+        .select('-_id dateReceived index message verified')
         .exec(function(err, inMsgs) {
         if(err) {
           return sendErrorJSON(res, err, 500);
@@ -481,7 +482,7 @@ exports.readConversationMessagesInRange = function(req, res) {
           .find({'conversation': conversation._id})
           .where('index').gte(indexStart).lte(indexEnd)
           .sort('index')
-          .select('index lastStatusChange message status')
+          .select('-_id index lastStatusChange message status')
           .exec(function(err, outMsgs) {
           if(err) {
             return sendErrorJSON(res, err, 500);
@@ -588,7 +589,7 @@ exports.fetchPeers = function(req, res) {
 
     Peer
       .find({owner: acct._id})
-      .populate({path: 'cert', select: 'groups'})
+      .populate({path: 'cert', select: '-_id groups'})
       .select('accountName peerId nickname cert')
       .exec(function(err, peers) {
       if(err) {
