@@ -3,16 +3,13 @@
 var sjcl = require('../../sjcl'),
   distort_ipfs = require('../../distort-ipfs'),
   config = require('../../config'),
+  utils = require('../../utils'),
   mongoose = require('mongoose'),
   Account = mongoose.model('Accounts');
 
 const DEBUG = config.debug;
-
-// Send error JSON
-function sendErrorJSON(res, err, statusCode) {
-  res.status(statusCode);
-  return res.json({error: err});
-}
+const sendErrorJSON = utils.sendErrorJSON;
+const formatPeerString = utils.formatPeerString;
 
 // Retrieve messages for the specified group
 exports.authenticate = function(req, res, next) {
@@ -47,7 +44,7 @@ exports.authenticate = function(req, res, next) {
       return res.sendErrorJSON(res, err, 500);
     }
     if(!account) {
-      return sendErrorJSON(res, 'No such account: ' + peerId + ":" + accountName, 401);
+      return sendErrorJSON(res, 'No such account: ' + formatPeerString(peerId, accountName), 404);
     }
 
     const _fromBits = sjcl.codec.base64.fromBits;
@@ -55,7 +52,7 @@ exports.authenticate = function(req, res, next) {
     const calcHash = _fromBits(_hash(authtoken));
 
     if(calcHash !== account.tokenHash) {
-      return sendErrorJSON(res, 'Could not authenticate user as peer: ' + peerId + ":" + accountName, 401);
+      return sendErrorJSON(res, 'Could not authenticate user as peer: ' + formatPeerString(peerId, accountName), 401);
     }
 
     account.lastInteraction = Date.now();

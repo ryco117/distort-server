@@ -5,6 +5,7 @@ var mongoose = require('mongoose'),
   distort_ipfs = require('../../distort-ipfs'),
   groupTree = require('../../groupTree'),
   config = require('../../config'),
+  utils = require('../../utils'),
   Account = mongoose.model('Accounts'),
   Cert = mongoose.model('Certs'),
   Conversation = mongoose.model('Conversations'),
@@ -14,6 +15,8 @@ var mongoose = require('mongoose'),
   Peer = mongoose.model('Peers');
 
 const DEBUG = config.debug;
+const sendErrorJSON = utils.sendErrorJSON;
+const formatPeerString = utils.formatPeerString;
 
 // Ensure the correct active Group-ID in DB
 function updateActiveGroup(peerId, groupId, accountName) {
@@ -27,19 +30,6 @@ function updateActiveGroup(peerId, groupId, accountName) {
       account.save();
     }
   });
-}
-
-// Send error JSON
-function sendErrorJSON(res, err, statusCode) {
-  res.status(statusCode);
-
-  err = (typeof err === "string") ? err : (err.message || String(err));
-
-  if(DEBUG) {
-    console.error(err + " : " + statusCode);
-  }
-
-  return res.json({'error': err});
 }
 
 // List all (sub)group memberships through their groups and subgroup paths
@@ -222,7 +212,7 @@ exports.postMessage = function(req, res) {
 
     group = group[0];
     if(!group) {
-      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 400);
+      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 404);
     }
 
     // Must include one way to identify peer
@@ -266,7 +256,7 @@ exports.postMessage = function(req, res) {
         });
       }
     }).catch(function(err) {
-      return sendErrorJSON(res, err, 400);
+      return sendErrorJSON(res, err, 404);
     }).then(function(toCert) {
       // If posting to this account and group soon, assume it to be the active group
       try {
@@ -365,7 +355,7 @@ exports.leaveGroup = function(req, res) {
 
     group = group[0];
     if(!group) {
-      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 400);
+      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 404);
     }
 
     Group.findByIdAndRemove(group._id, function(err, delStats) {
@@ -453,7 +443,7 @@ exports.readConversationMessagesInRange = function(req, res) {
 
     group = group[0];
     if(!group) {
-      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 400);
+      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 404);
     }
 
     Conversation.findOne({group: group._id, peerId: req.headers.conversationpeerid, accountName: req.headers.conversationaccountname || 'root'}, function(err, conversation) {
@@ -528,7 +518,7 @@ exports.updateAccount = function(req, res) {
       return sendErrorJSON(res, err, 500);
     }
     if(!account) {
-      return sendErrorJSON(res, 'Account "' + req.headers.peerid + (!!req.body.accountName ? ':' + req.body.accountName : '') + '" does not exist', 400);
+      return sendErrorJSON(res, 'Account "' + formatPeerString(req.headers.peerid, req.body.accountName) + '" does not exist', 404);
     }
 
     // set active group of account
@@ -637,7 +627,7 @@ exports.addPeer = function(req, res) {
           return sendErrorJSON(res, err, 500);
         }
         if(!cert) {
-          return sendErrorJSON(res, "Cannot add a peer until discovery of their certificate. Please wait for their next routine certificate post", 400);
+          return sendErrorJSON(res, "Cannot add a peer until discovery of their certificate. Please wait for their next routine certificate post", 404);
         }
 
         // If there exists a certificate for this user already, assign to this peer
@@ -678,9 +668,9 @@ exports.removePeer = function(req, res) {
         return sendErrorJSON(res, err, 500);
       }
 
-      const peerFullTitle = req.body.peerId + (!!req.body.accountName ? ':' + accountName : "");
+      const peerFullTitle = formatPeerString(req.body.peerId, req.body.accountName);
       if(!peer) {
-        return sendErrorJSON(res, 'Account has no entry for peer: ' + peerFullTitle, 400);
+        return sendErrorJSON(res, 'Account has no entry for peer: ' + peerFullTitle, 404);
       }
 
       Peer.remove({owner: acct._id, peerId: req.body.peerId, accountName: accountName}, function(err, delStats) {

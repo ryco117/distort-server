@@ -56,11 +56,14 @@ invalidate any other certificates this peer has published and save the new one.
     - ... fields were incorrectly formatted
     - ... gave incorrect parameters for the specified action/request
 * **401** - Unauthorized
-    - The client attempted to authorize as an account which does not exist
-    - ... gave an incorrect authorization token
+    - The client gave an incorrect authentication token
 * **403** - Forbidden
     - The client attempted to view/modify an account it cannot access
     - ... attempted to authorize as an IPFS identity different from that of the connected IPFS node. This is to ensure client knows their broadcasting identity
+* **404** - Not Found
+    - The client attempted to access a resource that does not exist
+    - This can range from deleting a group that does not exist to updating an account which does not exist
+    - Enqueuing messages to a peer for whom there is no local certificate will return `404` since the required resource does not yet locally stored
 * **500** - Internal Server Error
     - An internal server error occurred and caused the request to be abandoned prematurely
     
