@@ -14,7 +14,6 @@ var InMessageSchema = new Schema({
   },
   index: {
     type: Number,
-    unique: true,
     required: 'Must specify message index within group'
   },
   message: {
@@ -26,5 +25,8 @@ var InMessageSchema = new Schema({
     default: false
   }
 });
+
+// For each conversation, their may only be a single message with any given index
+InMessageSchema.index({conversation: 1, index: 1}, {unique: true});
 
 module.exports = mongoose.model('InMessages', InMessageSchema)

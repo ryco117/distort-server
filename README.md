@@ -6,8 +6,8 @@ A reference implementation homeserver for the research anonymity protocol DistoR
 The homeserver is created with nodejs and stores its data to a MongoDB database. It can be interacted with remotely through REST API calls. 
 A privately managed IPFS node must be exposed to the homeserver for pushing and receiving messages.
  
-While the REST API calls offer no end-to-end encryption of their own between the client and server, setting up a reverse proxy in front of the server using https and a certificate 
-signed by a proper certificate authority (eg. Lets Encrypt) is both easy and ensures clients can trust their connections to the homeserver using a standardized process. 
+While the REST API calls offer no end-to-end encryption of their own between the client and server, one is highly recommended to create a reverse proxy in front of the server, using HTTPS with a 
+signed certificate. The certificates can be signed either by a recognized Certificate Authroity (eg., Lets Encrypt) or be self-signed on the condition that the client trusts the signing certificate.
 
 ### Build
 ##### Docker Build

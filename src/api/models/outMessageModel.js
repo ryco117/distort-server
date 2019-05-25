@@ -10,7 +10,6 @@ var OutMessageSchema = new Schema({
   },
   index: {
     type: Number,
-    unique: true,
     required: 'Must specify message index within group'
   },
   lastStatusChange: {
@@ -32,5 +31,8 @@ var OutMessageSchema = new Schema({
     required: 'Cannot save message without target (certificate)'
   }
 });
+
+// For each conversation, their may only be a single message with any given index
+OutMessageSchema.index({conversation: 1, index: 1}, {unique: true});
 
 module.exports = mongoose.model('OutMessages', OutMessageSchema)
