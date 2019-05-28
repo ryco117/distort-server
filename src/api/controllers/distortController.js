@@ -91,18 +91,49 @@ exports.addGroup = function(req, res) {
         return sendErrorJSON(res, err, 500);
       }
 
-      if(group && group.subgroupIndex != subI) {
-        try {
-          // New group-tree node. Subscribe to new node then unsubscribe old
-          // (that way the *-cert channel isn't unsubscribed then re-added)
-          distort_ipfs.subscribe(group.name, subI);
-          distort_ipfs.unsubscribe(group.name, group.subgroupIndex);
-        } catch(err) {
-          return sendErrorJSON(res, err, 500);
+      // If authenticating account already belongs to group, update
+      if(group) {
+        if(group.subgroupIndex == subI) {
+          // no changes made to group
+          return res.json(group);
         }
-        group.subgroupIndex = subI;
-        group.save();
-        return res.json(group);
+
+        // New group-tree node. Subscribe to new node then unsubscribe old
+        // (that way the *-cert channel isn't unsubscribed then re-added)
+        const oldIndex = group.subgroupIndex;
+        return distort_ipfs.subscribe(group.name, subI).then(() => {
+          distort_ipfs.unsubscribe(group.name, oldIndex);
+        }).then(() => {
+          group.subgroupIndex = subI;
+          group.save();
+
+          // Include updated group in certificate
+          Cert.findById(account.cert, function(err, cert) {
+            if(err) {
+              return sendErrorJSON(res, err, 500);
+            }
+
+            // Replace old group index with new one in account certificate
+            const couple = group.name + ":" + oldIndex;
+            for(var i = 0; i < cert.groups.length; i++) {
+              if(couple === cert.groups[i]) {
+                cert.groups[i] = group.name + ":" + subI;
+                break;
+              }
+            }
+
+            cert.save(function(err) {
+              if(err) {
+                return sendErrorJSON(res, err, 500);
+              }
+
+              // Succeeded all the trials, group is fully updated
+              return res.json(group);
+            });
+          });
+        }).catch(err => {
+          return sendErrorJSON(res, err, 500);
+        });
       }
 
       reqGroup.subgroupIndex = subI;

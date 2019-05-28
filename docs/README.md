@@ -126,7 +126,8 @@ Request paths:
         - Body parameters:
             - `name`: string; the name of the group
             - `subgroupLevel`: non-negative integer; the group-tree depth to join
-        - Action: adds the specified group with a random node at the given depth
+        - Action: adds the specified group with a random node at the given depth. 
+        If the authenticating account is already subscribed to the named channel, only the node index is updated
         - Return: group object; the details of the added group
 * **/groups/:group-name**
 	* **GET** - Fetch conversations in group
@@ -173,7 +174,8 @@ Request paths:
 	        - `peerId`: string; the IPFS node ID of the peer to add
 	        - (Optional) `accountName`: string; the account name of the peer. Defaults to `root`
 	        - (Optional) `nickname`: string; a human friendly name to assign to the peer
-	    - Action: on the condition that there is a local entry for the specified peer's certificate, creates an entry for the peer using the given information 
+	    - Action: on the condition that there is a local entry for the specified peer's certificate, creates an entry for the peer using the given information. 
+	    If the authenticating account already has an entry for the specified peer, only the nickname is updated
 	    - Return: peer object; details of the created peer. If there is no local certificate for the specified peer, the request fails and error `404` is returned
 	* **DELETE** - Remove peer
 	    - Body parameters:

@@ -722,11 +722,11 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
   });
 };
 
-distort_ipfs.unsubscribe = function(topic, subgroupIndex) {
+distort_ipfs.unsubscribe = function(name, subgroupIndex) {
   const self = this;
   subgroupIndex = parseInt(subgroupIndex);
-  const topicCerts = nameToCertTopic(topic);
-  const topic = nameAndSubgroupToTopic(topic, subgroupIndex);
+  const topicCerts = nameToCertTopic(name);
+  const topic = nameAndSubgroupToTopic(name, subgroupIndex);
 
   return new Promise((resolve, reject) => {
     // Only unsubscribe certs after no more accounts require it
