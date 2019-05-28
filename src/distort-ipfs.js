@@ -1,3 +1,5 @@
+"use strict";
+
 var ipfsAPI = require('ipfs-http-client'),
   sjcl = require('./sjcl'),
   config = require('./config'),
@@ -25,7 +27,7 @@ const SUPPORTED_PROTOCOLS = [PROTOCOL_VERSION];
 const secp256k1 = sjcl.ecc.curves.k256;
 
 // Create distort-on- ipfs object to export
-var distort_ipfs = {_subscribedTo: {}, _subscribedToCert: {}};
+var distort_ipfs = {_subscribedTo: {}};
 
 // Group naming helpers
 function toGroupIndexCouple(group, index) {
@@ -202,6 +204,9 @@ distort_ipfs.initIpfs = function() {
             // Setup routines to run
             self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
             self.certIntervalId = setInterval(() => self._publishCert(), 30 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+
+            // Always publish certificate on start
+            self._publishCert();
             return resolve(true);
           }).catch(err => {
             throw reject(err);
@@ -364,9 +369,6 @@ distort_ipfs._dequeueMsg = function () {
       });
     }
   });
-
-  /* Safe removal of loop */
-  // return clearInterval(self.msgIntervalId);
 }
 
 // Publish our certificate to the active group
@@ -420,9 +422,6 @@ distort_ipfs._publishCert = function() {
         });
       }
   });
-
-  /* Safe removal of loop */
-  // return clearInterval(self.certIntervalId);
 }
 
 // Receive message logic
@@ -586,6 +585,7 @@ function subscribeMessageHandler(msg) {
     });
   });
 };
+
 function certificateMessageHandler(cert) {
   if(DEBUG) {
     console.log('Received certificate: ' + cert.data);
@@ -680,81 +680,92 @@ function certificateMessageHandler(cert) {
     }
   });
 };
+
 distort_ipfs.subscribe = function(name, subgroupIndex) {
   subgroupIndex = parseInt(subgroupIndex);
   const topicCerts = nameToCertTopic(name);
-  topic = nameAndSubgroupToTopic(name, subgroupIndex);
+  const topic = nameAndSubgroupToTopic(name, subgroupIndex);
 
-  this.ipfsNode.pubsub.subscribe(topic, subscribeMessageHandler, {discover: true}, err => {
-    if(err) {
-      throw console.error('Failed to subscribe to: ' + topic, err);
-    }
-
+  return new Promise((resolve, reject) => {
     // Remeber number of accounts requiring this channel
     if(this._subscribedTo[topic] > 0) {
       this._subscribedTo[topic]++;
-      return;
+      resolve(true);
     } else {
-      this._subscribedTo[topic] = 1;
-    };
+      this.ipfsNode.pubsub.subscribe(topic, subscribeMessageHandler, {discover: true}, err => {
+        if(err) {
+          throw new Error('Failed to subscribe to: ' + topic + ' : ' + err);
+        }
+        this._subscribedTo[topic] = 1;
+        resolve(true);
+      });
+    }
+  }).then(() => {
+    // Remeber number of accounts requiring this channel
+    if(this._subscribedTo[topicCerts] > 0) {
+      this._subscribedTo[topicCerts]++;
+    } else {
+      this.ipfsNode.pubsub.subscribe(topicCerts, certificateMessageHandler, {discover: true}, err => {
+        if(err) {
+          throw new Error('Failed to subscribe to: ' + topicCerts + ' : ' + err);
+        }
+        if(DEBUG) {
+          console.log('Now subscribed to: ' + topic);
+        }
 
-    this.ipfsNode.pubsub.subscribe(topicCerts, certificateMessageHandler, {discover: true}, err => {
-      if(err) {
-        throw console.error('Failed to subscribe to: ' + topicCerts, err);
-      }
-
-      // Remeber number of accounts requiring this channel
-      if(this._subscribedTo[topicCerts] > 0) {
-        this._subscribedTo[topicCerts]++;
-        return;
-      } else {
         this._subscribedTo[topicCerts] = 1;
-      };
-
-      if(DEBUG) {
-        console.log('Now subscribed to: ' + topic);
-      }
-    });
+        return;
+      });
+    }
+  }).catch(err => {
+    console.error(err);
   });
 };
+
 distort_ipfs.unsubscribe = function(topic, subgroupIndex) {
+  const self = this;
   subgroupIndex = parseInt(subgroupIndex);
   const topicCerts = nameToCertTopic(topic);
-  topic = nameAndSubgroupToTopic(topic, subgroupIndex);
+  const topic = nameAndSubgroupToTopic(topic, subgroupIndex);
 
-  this.ipfsNode.pubsub.unsubscribe(topic, subscribeMessageHandler, err => {
-    if(err) {
-      throw new Error('Failed to unsubscribe from: ' + topic, err);
+  return new Promise((resolve, reject) => {
+    // Only unsubscribe certs after no more accounts require it
+    if(!self._subscribedTo[topic] || self._subscribedTo[topic] < 1) {
+      resolve(true);
+    } else if(self._subscribedTo[topic] > 1) {
+      self._subscribedTo[topic]--;
+      resolve(true);
     }
 
-    // Only unsubscribe certs after no more accounts require it
-    if(this._subscribedToCert[topic] > 0) {
-      this._subscribedToCert[topic] -= 1;
-      if(this._subscribedToCert[topic] > 0) {
-        return;
+    // Only one account relies on channel, can unsubscribe
+    self.ipfsNode.pubsub.unsubscribe(topic, subscribeMessageHandler, err => {
+      if(err) {
+        throw new Error('Failed to unsubscribe from: ' + topic, err);
       }
-    } else {
+      delete self._subscribedTo[topic];
+      resolve(true);
+    });
+  }).then(() => {
+    if(!self._subscribedTo[topicCerts] || self._subscribedTo[topicCerts] < 1) {
+      return;
+    } else if(self._subscribedTo[topicCerts] > 1) {
+      self._subscribedTo[topicCerts]--;
       return;
     }
 
-    this.ipfsNode.pubsub.unsubscribe(topicCerts, certificateMessageHandler, err => {
+    self.ipfsNode.pubsub.unsubscribe(topicCerts, certificateMessageHandler, err => {
       if(err) {
         throw new Error('Failed to unsubscribe from: ' + topicCerts, err);
       }
-
-      if(this._subscribedToCert[topicCerts] > 0) {
-        this._subscribedToCert[topicCerts] -= 1;
-        if(this._subscribedToCert[topicCerts] > 0) {
-          return;
-        }
-      } else {
-        return;
-      }
-
       if(DEBUG) {
         console.log('Unsubscribed from: ' + topic);
       }
+
+      delete self._subscribedTo[topicCerts];
+      return;
     });
+  }).catch(err => {
+    console.error(err);
   });
 };
 

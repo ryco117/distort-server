@@ -70,7 +70,11 @@ exports.listGroups = function(req, res) {
 exports.addGroup = function(req, res) {
   const subLevel = parseInt(req.body.subgroupLevel);
   if(isNaN(subLevel) || subLevel < 0 || subLevel > groupTree.MAX_PATH_DEPTH) {
-    return sendErrorJSON(res, '"subgroupLevel" must be a non-negative integer', 400);
+    return sendErrorJSON(res, 'Field "subgroupLevel" must be a non-negative integer', 400);
+  }
+  const groupName = req.body.name;
+  if(!groupName || typeof groupName !== "string") {
+    return sendErrorJSON(res, 'Field "name" must be a non-empty string', 400);
   }
   const subI = groupTree.randomFromLevel(subLevel);
 
@@ -80,16 +84,19 @@ exports.addGroup = function(req, res) {
     }
 
     var reqGroup = {};
-    reqGroup.name = req.body.name;
+    reqGroup.name = groupName;
     reqGroup.owner = account._id;
     Group.findOne(reqGroup, function(err, group) {
       if(err) {
         return sendErrorJSON(res, err, 500);
       }
 
-      if(group) {
+      if(group && group.subgroupIndex != subI) {
         try {
-          distort_ipfs.subscribe(reqGroup.name, subI);
+          // New group-tree node. Subscribe to new node then unsubscribe old
+          // (that way the *-cert channel isn't unsubscribed then re-added)
+          distort_ipfs.subscribe(group.name, subI);
+          distort_ipfs.unsubscribe(group.name, group.subgroupIndex);
         } catch(err) {
           return sendErrorJSON(res, err, 500);
         }
@@ -100,7 +107,7 @@ exports.addGroup = function(req, res) {
 
       reqGroup.subgroupIndex = subI;
       try {
-        distort_ipfs.subscribe(reqGroup.name, subI);
+        distort_ipfs.subscribe(groupName, subI);
       } catch(err) {
         return sendErrorJSON(res, err, 500);
       }
@@ -408,7 +415,7 @@ exports.leaveGroup = function(req, res) {
               return sendErrorJSON(res, err, 500);
             }
 
-            res.json({message: 'Successfully left group: ' + req.params.groupName});
+            sendMessageJSON(res, 'Successfully left group: ' + req.params.groupName);
           });
         });
       })
@@ -678,7 +685,7 @@ exports.removePeer = function(req, res) {
           return sendErrorJSON(res, err, 500);
         }
 
-        res.json({message: 'Successfully removed peer: ' + peerFullTitle});
+        sendMessageJSON(res, 'Successfully removed peer: ' + peerFullTitle);
       });
     });
   });

@@ -1,11 +1,11 @@
 "use strict";
 
 var distort_ipfs = require('../../distort-ipfs'),
-  config = require('../../config');
+  config = require('../../config'),
+  utils = require('../../utils');
 
 const DEBUG = config.debug;
 
-// List all (sub)group memberships through their groups and subgroup paths
 exports.getIpfs = function(req, res) {
   if(DEBUG) {
     console.log('Unauthenticated Request: ipfs/')
@@ -14,5 +14,5 @@ exports.getIpfs = function(req, res) {
     console.log('headers: ' + JSON.stringify(req.headers));
   }
 
-  res.send(distort_ipfs.peerId);
+  utils.sendMessageJSON(res, distort_ipfs.peerId);
 };

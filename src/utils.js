@@ -19,3 +19,8 @@ exports.sendErrorJSON = function(res, err, statusCode) {
 
   return res.json({'error': err});
 }
+
+// Return string as a message object
+exports.sendMessageJSON = function(res, msg) {
+  res.json({'message': msg});
+}

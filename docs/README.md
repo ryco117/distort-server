@@ -3,7 +3,7 @@
 
 ## Server Overview
 ### Configuration
-The server is configurable by the top-level JSON file `config.json`. It features several features:
+The server is configurable by the top-level JSON file `config.json`. It features several configurables:
 * `debug`: boolean; print debug-level information to the console iff this key has a positive truthyness value
 * `ipfsNode`: object; information on the IPFS node to use for IPFS API and as the node's identity
     * `address`: string; IP or domain address of the IPFS node to use
@@ -100,8 +100,8 @@ invalidate any other certificates this peer has published and save the new one.
     - (Optional) `nickname`: string; a locally unique identifier for this account
     - `peerId`: string; the IPFS identity of the peer
     - `cert`: certificate object; contains information about the peer's certificate
-* **Success Message Object**
-    - `message`: string; success message. Only used as a success response to requests to remove a peer or to leave from a group
+* **Server-Message Object**
+    - `message`: string; a string response from the server
 
 ---
 
@@ -109,7 +109,7 @@ invalidate any other certificates this peer has published and save the new one.
 Request paths:
 * **/ipfs**
     * **GET** - Fetch IPFS node ID
-        - Return: string, the actively connected IPFS node's ID
+        - Return: server-message object; server-message containing the actively connected IPFS node's ID
         
 ### Authenticated Requests
 Note: Authenticated requests require the following headers: 
@@ -143,7 +143,7 @@ Request paths:
         - Return: message object; details of the enqueued outgoing message
 	* **DELETE** - Leave group
 	    - Action: leaves the group `group-name` 
-	    - Return: JSON object; an object containing only the field `message` set to a success string
+	    - Return: server-message object; server-message containing a success string
 * **/groups/:group-name/:index-start/[:index-end]**
 	* **GET** - Read messages from conversation within range specified by `index-start` and optionally `index-end`, inclusively. End defaults to the last index in the database
         - Additional request headers:
@@ -174,9 +174,9 @@ Request paths:
 	        - (Optional) `accountName`: string; the account name of the peer. Defaults to `root`
 	        - (Optional) `nickname`: string; a human friendly name to assign to the peer
 	    - Action: on the condition that there is a local entry for the specified peer's certificate, creates an entry for the peer using the given information 
-	    - Return: peer object; details of the created peer. If there is no local certificate for the specified peer, no peer is creates and error `400` is returned
+	    - Return: peer object; details of the created peer. If there is no local certificate for the specified peer, the request fails and error `404` is returned
 	* **DELETE** - Remove peer
 	    - Body parameters:
 	        - `peerId`: string; the IPFS node ID of the peer to remove
 	        - (Optional) `accountName`: string; the account name of the peer. Defaults to `root` 
-        - Return: JSON object; an object containing only the field `message` set to a success string
+        - Return: server-message object; server-message containing a success string
