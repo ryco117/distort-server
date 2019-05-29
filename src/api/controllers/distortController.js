@@ -16,6 +16,7 @@ var mongoose = require('mongoose'),
 
 const DEBUG = config.debug;
 const sendErrorJSON = utils.sendErrorJSON;
+const sendMessageJSON = utils.sendMessageJSON;
 const formatPeerString = utils.formatPeerString;
 
 // Ensure the correct active Group-ID in DB
@@ -102,33 +103,38 @@ exports.addGroup = function(req, res) {
         // (that way the *-cert channel isn't unsubscribed then re-added)
         const oldIndex = group.subgroupIndex;
         return distort_ipfs.subscribe(group.name, subI).then(() => {
-          distort_ipfs.unsubscribe(group.name, oldIndex);
+          return distort_ipfs.unsubscribe(group.name, oldIndex);
         }).then(() => {
           group.subgroupIndex = subI;
-          group.save();
-
-          // Include updated group in certificate
-          Cert.findById(account.cert, function(err, cert) {
+          group.save(function(err) {
             if(err) {
               return sendErrorJSON(res, err, 500);
             }
 
-            // Replace old group index with new one in account certificate
-            const couple = group.name + ":" + oldIndex;
-            for(var i = 0; i < cert.groups.length; i++) {
-              if(couple === cert.groups[i]) {
-                cert.groups[i] = group.name + ":" + subI;
-                break;
-              }
-            }
-
-            cert.save(function(err) {
+            // Include updated group in certificate
+            Cert.findById(account.cert, function(err, cert) {
               if(err) {
                 return sendErrorJSON(res, err, 500);
               }
 
-              // Succeeded all the trials, group is fully updated
-              return res.json(group);
+              // Replace old group index with new one in account certificate
+              const newG = [group.name + ":" + subI];
+              for(var i = 0; i < cert.groups.length; i++) {
+                if(cert.groups[i].substring(0, group.name.length) !== group.name ||
+                  cert.groups[i].charAt(group.name.length) !== ":") {
+                  newG.push(cert.groups[i]);
+                }
+              }
+              cert.groups = newG;
+
+              cert.save(function(err) {
+                if(err) {
+                  return sendErrorJSON(res, err, 500);
+                }
+
+                // Succeeded all the trials, group is fully updated
+                return res.json(group);
+              });
             });
           });
         }).catch(err => {

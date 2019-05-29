@@ -1,6 +1,8 @@
 # DistoRt Homeserver
 ([main page](https://ryco117.github.io/distort-server))
 
+These technical docs are meant for homeserver administrators to be able to properly configure their server, as well as developers wishing to write DistoRt clients and homeservers
+
 ## Table of Contents
 1. [Server Overview](#server-overview)
     1. [Configuration](#configuration)
@@ -98,13 +100,13 @@ invalidate any other certificates this peer has published and save the new one.
     - `name`: string; the name of the distort group
     - `subgroup`: non negative integer; the index of the node within the group tree that the account belongs to
 * **Message Object**
-    - (Received message,*Not implemented always false*) `verified`: boolean; true iff the server has verified that the message was signed with the message sender's certificate
-    - (Sent message) `status`: exactly one of strings `enqueued`,`cancelled`,`sent`; 
+    - (Received message only,Not implemented always false) `verified`: boolean; true iff the server has verified that the message was signed with the message sender's certificate
+    - (Sent message only) `status`: exactly one of strings `enqueued`,`cancelled`,`sent`; 
     the current status of the outgoing message. It is either enqueued to be sent, sent, or cancelled (*cancellation not implemented*)
     - `index`: non negative integer; zero-indexed position of the message chronologically 
     - `message`: string; the plaintext contents of the message
-    - (Received message) `dateReceived`: date-string; **YYYY-MM-DDThh:mm:ss.sssZ** representation of UTC time the message was received
-    - (Sent message) `lastStatusChange`: date-string; **YYYY-MM-DDThh:mm:ss.sssZ** representation of the last time this message's status was changed
+    - (Received message only) `dateReceived`: date-string; **YYYY-MM-DDThh:mm:ss.sssZ** representation of UTC time the message was received
+    - (Sent message only) `lastStatusChange`: date-string; **YYYY-MM-DDThh:mm:ss.sssZ** representation of the last time this message's status was changed
 * **Peer Object**
     - `accountName`: string; the name of the account under of IPFS identity. Defaults to `root`
     - `_id`: string; hash string uniquely identifying the local peer object
