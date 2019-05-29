@@ -1,6 +1,17 @@
 # DistoRt Homeserver
 ([main page](https://ryco117.github.io/distort-server))
 
+## Table of Contents
+1. [Server Overview](#server-overview)
+    1. [Configuration](#configuration)
+    1. [Launch Actions](#launch-actions)
+    1. [Runtime Actions](#runtime-actions)
+1. [REST API](#rest-api)
+    1. [Response Codes](#response-codes)
+    1. [Returned JSON Objects](#returned-json-objects)
+    1. [Unauthenticated Requests](#unauthenticated-requests)
+    1. [Authenticated Requests](#authenticated-requests)
+
 ## Server Overview
 ### Configuration
 The server is configurable by the top-level JSON file `config.json`. It features several configurables:
@@ -14,7 +25,7 @@ The server is configurable by the top-level JSON file `config.json`. It features
 * `port`: positive integer; the local port to open for REST API calls
 * `protocolVersion`: string; the version string of the protocol this server will implement. Eg., "0.1.0"
 
-### Launch
+### Launch Actions
 1. Connect to the configured MongoDB to use for node storage. Retry every 5 seconds until successful connection
 1. Attempt to successfully perform the following actions without failure. Retry every 5 seconds until completion without having to abort
     1. Connect to the configured IPFS node that will be used as the node's broadcasting identity and gateway
