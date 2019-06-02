@@ -123,7 +123,7 @@ distort_ipfs.initIpfs = function() {
               // Password creation for new account
               var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
               console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
-              token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
+              const token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
               var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
               if(DEBUG) {
                 console.log('Token: ' + token);
@@ -179,8 +179,8 @@ distort_ipfs.initIpfs = function() {
                   }
                   if(DEBUG) {
                     console.log('Saved new account: ' + acc.peerId);
-                    return resolve2(true);
                   }
+                  return resolve2(true);
                 });
               });
             } else {
@@ -343,7 +343,7 @@ distort_ipfs._dequeueMsg = function () {
         m = packageMessage(m);
 
         // TODO: Sign ciphertext using accounts signing key
-
+        // NOTE: Marked as "wontfix" as of issue comment https://github.com/ryco117/distort-server/issues/1#issuecomment-461721028
         // Publish message to IPFS
         try {
           distort_ipfs.publishToSubgroups(group.name, randPath, JSON.stringify(m));
