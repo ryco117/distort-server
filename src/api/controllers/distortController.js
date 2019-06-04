@@ -119,9 +119,9 @@ exports.addGroup = function(req, res) {
 
               // Replace old group index with new one in account certificate
               const newG = [group.name + ":" + subI];
+              const couple = group.name + ":" + oldIndex;
               for(var i = 0; i < cert.groups.length; i++) {
-                if(cert.groups[i].substring(0, group.name.length) !== group.name ||
-                  cert.groups[i].charAt(group.name.length) !== ":") {
+                if(cert.groups[i] !== couple) {
                   newG.push(cert.groups[i]);
                 }
               }

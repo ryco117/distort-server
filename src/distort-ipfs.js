@@ -3,6 +3,7 @@
 var ipfsAPI = require('ipfs-http-client'),
   sjcl = require('./sjcl'),
   config = require('./config'),
+  utils = require('./utils'),
   groupTree = require('./groupTree'),
   mongoose = require('mongoose'),
   Account = mongoose.model('Accounts'),
@@ -64,6 +65,19 @@ function hasGroupInPath(groupName, path, groups) {
   return false;
 }
 
+// Helper function to connect to all configured bootstrap peers.
+// This is significantly more important in the early phases as
+// DistoRt peers will be few and far between
+function bootstrapPeers(ipfsNode) {
+  const allBootstraps = [];
+  const ipfsConfig = config.ipfsNode;
+  for(var i = 0; i < parseInt(ipfsConfig.bootstrap.length); i++) {
+    const j = i;
+    allBootstraps.push(ipfsNode.swarm.connect(ipfsConfig.bootstrap[i]));
+  }
+  return Promise.all(allBootstraps);
+}
+
 distort_ipfs.initIpfs = function() {
   const self = this;
   const ipfsConfig = config.ipfsNode;
@@ -87,129 +101,126 @@ distort_ipfs.initIpfs = function() {
         }
 
         // Attempt to bootstrap specified peers
+        var bootstrapPromise = Promise.resolve(true);
         if(typeof (ipfsConfig.bootstrap) === "object" && parseInt(ipfsConfig.bootstrap.length) > 0) {
-          for(var i = 0; i < parseInt(ipfsConfig.bootstrap.length); i++) {
-            const j = i;
-            self.ipfsNode.swarm.connect(ipfsConfig.bootstrap, function (err) {
-              if(DEBUG) {
-                if(err) {
-                  console.error("Bootstrap to peer failed: " + ipfsConfig.bootstrap[j]);
-                } else {
-                  console.log("Connected to peer " + ipfsConfig.bootstrap[j]);
-                }
-              }
-            });
-          }
+          bootstrapPromise = bootstrapPeers(self.ipfsNode).catch(err => {
+            if(DEBUG) {
+              console.error('Failed to complete bootstrap list: ' + err);
+            }
+          });
         }
 
-        // Find accounts for current IPFS ID (or create new 'root' account if none exist) that are enabled. 'root' cannot be disabled
-        Account
-          .find({peerId: self.peerId, enabled: true})
-          .populate('cert')
-          .exec(function(err, accounts) {
+        // If bootstrapping, wait until finished before continuing
+        bootstrapPromise.then(() => {
+          // Find accounts for current IPFS ID (or create new 'root' account if none exist) that are enabled. 'root' cannot be disabled
+          Account
+            .find({peerId: self.peerId, enabled: true})
+            .populate('cert')
+            .exec(function(err, accounts) {
 
-          if(err) {
-            return reject('Could not search database: ' + err);
-          }
+            if(err) {
+              return reject('Could not search database: ' + err);
+            }
 
-          return new Promise((resolve2, reject2) => {
-            if(accounts.length === 0) {
-              // Create a new account
-              let _hash = sjcl.hash.sha256.hash;
-              let _pbkdf2 = sjcl.misc.pbkdf2;
+            return new Promise((resolve2, reject2) => {
+              if(accounts.length === 0) {
+                // Create a new account
+                let _hash = sjcl.hash.sha256.hash;
+                let _pbkdf2 = sjcl.misc.pbkdf2;
 
-              console.log('Creating new account for IPFS peer-ID: ' + self.peerId);
+                console.log('Creating new account for IPFS peer-ID: ' + self.peerId);
 
-              // Password creation for new account
-              var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
-              console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
-              const token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
-              var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
-              if(DEBUG) {
-                console.log('Token: ' + token);
-                console.log('Token-hash: ' + tokenHash);
-              }
-              let _fromBits = sjcl.codec.hex.fromBits;
-
-              // Create new private/public keypairs for account
-              var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
-
-              // Get encryption strings
-              const encSec = _fromBits(e.sec.get());
-              const encPubCouple = e.pub.get();
-              const encPub = _fromBits(encPubCouple.x) + ":" + _fromBits(encPubCouple.y);
-
-              // Get signing strings
-              var s = sjcl.ecc.ecdsa.generateKeys(secp256k1, PARANOIA);
-              const sigSec = _fromBits(s.sec.get());
-              const sigPubCouple = s.pub.get();
-              const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
-
-              // New certificate's schema
-              var newCert = new Cert({
-                key: {
-                  encrypt: {
-                    sec: encSec,
-                    pub: encPub
-                  },
-                  sign: {
-                    sec: sigSec,
-                    pub: sigPub
-                  }
-                },
-                lastExpiration: Date.now() + 14*HOURS_PER_DAY*MINUTES_PER_HOUR*SECONDS_PER_MINUTE*MS_PER_SECOND,
-                peerId: self.peerId
-              });
-
-              // Save for reference
-              newCert.save(function(err, cert) {
-                if(err) {
-                  return reject2('Could not save account: ' + err);
+                // Password creation for new account
+                var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
+                console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
+                const token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
+                var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
+                if(DEBUG) {
+                  console.log('Token: ' + token);
+                  console.log('Token-hash: ' + tokenHash);
                 }
+                let _fromBits = sjcl.codec.hex.fromBits;
 
-                // Create and save new account schema
-                var newAccount = new Account({
-                  cert: cert._id,
-                  peerId: self.peerId,
-                  tokenHash: tokenHash
+                // Create new private/public keypairs for account
+                var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
+
+                // Get encryption strings
+                const encSec = _fromBits(e.sec.get());
+                const encPubCouple = e.pub.get();
+                const encPub = _fromBits(encPubCouple.x) + ":" + _fromBits(encPubCouple.y);
+
+                // Get signing strings
+                var s = sjcl.ecc.ecdsa.generateKeys(secp256k1, PARANOIA);
+                const sigSec = _fromBits(s.sec.get());
+                const sigPubCouple = s.pub.get();
+                const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
+
+                // New certificate's schema
+                var newCert = new Cert({
+                  key: {
+                    encrypt: {
+                      sec: encSec,
+                      pub: encPub
+                    },
+                    sign: {
+                      sec: sigSec,
+                      pub: sigPub
+                    }
+                  },
+                  lastExpiration: Date.now() + 14*HOURS_PER_DAY*MINUTES_PER_HOUR*SECONDS_PER_MINUTE*MS_PER_SECOND,
+                  peerId: self.peerId
                 });
-                newAccount.save(function(err, acc) {
+
+                // Save for reference
+                newCert.save(function(err, cert) {
                   if(err) {
                     return reject2('Could not save account: ' + err);
                   }
-                  if(DEBUG) {
-                    console.log('Saved new account: ' + acc.peerId);
-                  }
-                  return resolve2(true);
-                });
-              });
-            } else {
-              // Account(s) for this IPFS node already exist
-              for(var i = 0; i < accounts.length; i++) {
-                const account = accounts[i];
 
-                // Subscribe IPFS-node to all stored groups for account
-                Group.find({owner: account._id}, function(err, groups) {
-                  if(err) {
-                    return reject2('Could not search database: ' + err);
-                  }
-                  for(var i = 0; i < groups.length; i++) {
-                    self.subscribe(groups[i].name, groups[i].subgroupIndex);
-                  }
-                  return resolve2(true);
+                  // Create and save new account schema
+                  var newAccount = new Account({
+                    cert: cert._id,
+                    peerId: self.peerId,
+                    tokenHash: tokenHash
+                  });
+                  newAccount.save(function(err, acc) {
+                    if(err) {
+                      return reject2('Could not save account: ' + err);
+                    }
+                    if(DEBUG) {
+                      console.log('Saved new account: ' + acc.peerId);
+                    }
+                    return resolve2(true);
+                  });
                 });
+              } else {
+                // Account(s) for this IPFS node already exist
+                for(var i = 0; i < accounts.length; i++) {
+                  const account = accounts[i];
+
+                  // Subscribe IPFS-node to all stored groups for account
+                  Group.find({owner: account._id}, function(err, groups) {
+                    if(err) {
+                      return reject2('Could not search database: ' + err);
+                    }
+                    for(var i = 0; i < groups.length; i++) {
+                      self.subscribe(groups[i].name, groups[i].subgroupIndex);
+                    }
+                    return resolve2(true);
+                  });
+                }
               }
-            }
-          }).then(() => {
-            // Setup routines to run
-            self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
-            self.certIntervalId = setInterval(() => self._publishCert(), 30 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+            }).then(() => {
+              // Setup routines to run
+              self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+              self.certIntervalId = setInterval(() => self._publishCert(), 30 * SECONDS_PER_MINUTE * MS_PER_SECOND);
 
-            // Always publish certificate on start
-            self._publishCert();
-            return resolve(true);
-          }).catch(err => {
-            throw reject(err);
+              // Always publish certificate on start
+              self._publishCert();
+              return resolve(true);
+            }).catch(err => {
+              throw reject(err);
+            });
           });
         });
       });
@@ -273,101 +284,117 @@ function packageMessage(msg) {
 distort_ipfs._dequeueMsg = function () {
   const self = this;
 
-  Account
-  .find({peerId: self.peerId, enabled: true})
-  .populate('cert')
-  .populate('activeGroup')
-  .exec(function(err, accounts) {
-    if(err) {
-      return console.error(err);
-    }
-
-    for(var i = 0; i < accounts.length; i++) {
-      const account = accounts[i];
-      const group = account.activeGroup;
-      if(!group) {
-        continue;
+  // NOTE: IPFS doesn't seem to have an ability to prioritize keeping
+  // specified nodes, meaning that the manually bootstrapped nodes may be
+  // dropped without warning. This logic is to ensure the configured
+  // nodes are always maintained when broadcasting messages.
+  // TODO: Remove this logic when anonymity group is large enough that
+  // peers will maintain a connected graph without this
+  var bootstrapPromise = Promise.resolve(true);
+  if(typeof (config.ipfsNode.bootstrap) === "object" && parseInt(config.ipfsNode.bootstrap.length) > 0) {
+    bootstrapPromise = bootstrapPeers(self.ipfsNode).catch(err => {
+      if(DEBUG) {
+        console.error('Failed to complete bootstrap list: ' + err);
+      }
+    });
+  }
+  bootstrapPromise.then(() => {
+    Account
+    .find({peerId: self.peerId, enabled: true})
+    .populate('cert')
+    .populate('activeGroup')
+    .exec(function(err, accounts) {
+      if(err) {
+        return console.error(err);
       }
 
-      OutMessage.aggregate([
-      {
-        $lookup: {
-          from: 'certs',
-          localField: 'to',
-          foreignField: '_id',
-          as:'to'
-        }
-      },
-      {
-        $lookup: {
-          from: 'conversations',
-          localField: 'conversation',
-          foreignField: '_id',
-          as:'conversation'
-        }
-      },
-      {
-        $unwind:'$to'
-      },
-      {
-        $unwind:'$conversation'
-      },
-      {
-        $match: {
-          'status': 'enqueued',
-          'conversation.group': group._id
-        }
-      }]).sort('lastStatusChange')
-        .exec(function(err, msgs) {
-
-        if(DEBUG) {
-          console.log('Active group: ' + group.name);
-          console.log('Queried messages: ' + JSON.stringify(msgs));
+      for(var i = 0; i < accounts.length; i++) {
+        const account = accounts[i];
+        const group = account.activeGroup;
+        if(!group) {
+          continue;
         }
 
-        const randPath = groupTree.randomPath();
-        if(DEBUG) {
-          console.log(JSON.stringify(randPath));
-        }
-
-        var m = {v: PROTOCOL_VERSION, fromAccount: account.accountName};
-        var index = undefined;
-        for(var i = 0; i < msgs.length; i++) {
-          if(hasGroupInPath(group.name, randPath, msgs[i].to.groups)) {
-            m.message = msgs[i].message;
-            m.to = msgs[i].to;
-            index = i;
-            break;
+        OutMessage.aggregate([
+        {
+          $lookup: {
+            from: 'certs',
+            localField: 'to',
+            foreignField: '_id',
+            as:'to'
           }
-        }
-        m = packageMessage(m);
-
-        // TODO: Sign ciphertext using accounts signing key
-        // NOTE: Marked as "wontfix" as of issue comment https://github.com/ryco117/distort-server/issues/1#issuecomment-461721028
-        // Publish message to IPFS
-        try {
-          distort_ipfs.publishToSubgroups(group.name, randPath, JSON.stringify(m));
-          if(index !== undefined) {
-            OutMessage
-              .findById(msgs[index]._id)
-              .populate('conversation')
-              .exec(function(err, msg) {
-
-              if(err) {
-                throw new Error(err);
-              }
-              msg.status = 'sent';
-              msg.lastStatusChange = Date.now();
-              msg.save();
-              msg.conversation.latestStatusChangeDate = Date.now();
-              msg.conversation.save();
-            });
+        },
+        {
+          $lookup: {
+            from: 'conversations',
+            localField: 'conversation',
+            foreignField: '_id',
+            as:'conversation'
           }
-        } catch(err) {
-          return console.error(err);
-        }
-      });
-    }
+        },
+        {
+          $unwind:'$to'
+        },
+        {
+          $unwind:'$conversation'
+        },
+        {
+          $match: {
+            'status': 'enqueued',
+            'conversation.group': group._id
+          }
+        }]).sort('lastStatusChange')
+          .exec(function(err, msgs) {
+
+          if(DEBUG) {
+            console.log('Active group: ' + group.name);
+            console.log('Queried messages: ' + JSON.stringify(msgs));
+          }
+
+          const randPath = groupTree.randomPath();
+          if(DEBUG) {
+            console.log(JSON.stringify(randPath));
+          }
+
+          var m = {v: PROTOCOL_VERSION, fromAccount: account.accountName};
+          var index = undefined;
+          for(var i = 0; i < msgs.length; i++) {
+            if(hasGroupInPath(group.name, randPath, msgs[i].to.groups)) {
+              m.message = msgs[i].message;
+              m.to = msgs[i].to;
+              index = i;
+              break;
+            }
+          }
+          m = packageMessage(m);
+
+          // TODO: Sign ciphertext using accounts signing key
+          // NOTE: Marked as "wontfix" as of issue comment https://github.com/ryco117/distort-server/issues/1#issuecomment-461721028
+          // Publish message to IPFS
+          try {
+            distort_ipfs.publishToSubgroups(group.name, randPath, JSON.stringify(m));
+            if(index !== undefined) {
+              OutMessage
+                .findById(msgs[index]._id)
+                .populate('conversation')
+                .exec(function(err, msg) {
+
+                if(err) {
+                  throw new Error(err);
+                }
+                msg.status = 'sent';
+                msg.lastStatusChange = Date.now();
+                msg.save();
+                msg.conversation.latestStatusChangeDate = Date.now();
+                msg.conversation.save();
+              });
+            }
+          } catch(err) {
+            return console.error(err);
+          }
+        });
+      }
+    });
   });
 }
 
@@ -632,7 +659,7 @@ function certificateMessageHandler(cert) {
         }
 
         if(DEBUG) {
-          console.log("Updated key for peer: " + from + ":" + cert.fromAccount);
+          console.log("Updated key for peer: " + utils.formatPeerString(from, cert.fromAccount));
         };
       });
     } else {
