@@ -15,7 +15,6 @@ var ipfsAPI = require('ipfs-http-client'),
   OutMessage = mongoose.model('OutMessages');
 
 // Some constants
-const DEBUG = config.debug;
 const HOURS_PER_DAY = 24;
 const MINUTES_PER_HOUR = 60;
 const SECONDS_PER_MINUTE = 60;
@@ -24,8 +23,9 @@ const PARANOIA = 8;
 const MESSAGE_LENGTH = 1024;  // Should not be configurable, but a constant of the protocol
 const PROTOCOL_VERSION = config.protocolVersion;
 const SUPPORTED_PROTOCOLS = [PROTOCOL_VERSION];
-
 const secp256k1 = sjcl.ecc.curves.k256;
+const debugPrint = utils.debugPrint;
+const debugPrintError = utils.debugPrintError;
 
 // Create distort-on- ipfs object to export
 const distort_ipfs = {_subscribedTo: {}};
@@ -89,9 +89,7 @@ distort_ipfs.initIpfs = function() {
       if(err) {
         return reject('Failed to connect to IPFS node: ' + err);
       }
-      if(DEBUG) {
-        console.log("IPFS node has peer-ID: " + identity.id);
-      }
+      debugPrint("IPFS node has peer-ID: " + identity.id);
       self.peerId = identity.id;
 
       // https://github.com/ipfs/go-ipfs/blob/c10f043f3bb7a48e8b43e7f4e35e1cbccf762c68/docs/experimental-features.md#message-signing
@@ -104,9 +102,7 @@ distort_ipfs.initIpfs = function() {
         var bootstrapPromise = Promise.resolve(true);
         if(typeof (ipfsConfig.bootstrap) === "object" && parseInt(ipfsConfig.bootstrap.length) > 0) {
           bootstrapPromise = bootstrapPeers(self.ipfsNode).catch(err => {
-            if(DEBUG) {
-              console.error('Failed to complete bootstrap list: ' + err);
-            }
+            debugPrintError('Failed to complete bootstrap list: ' + err);
           });
         }
 
@@ -128,17 +124,16 @@ distort_ipfs.initIpfs = function() {
                 let _hash = sjcl.hash.sha256.hash;
                 let _pbkdf2 = sjcl.misc.pbkdf2;
 
-                console.log('Creating new account for IPFS peer-ID: ' + self.peerId);
+                debugPrint('Creating new account for IPFS peer-ID: ' + self.peerId);
 
                 // Password creation for new account
                 var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
                 console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
                 const token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
+                console.log('REST Authentication Token: ' + token);
                 var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
-                if(DEBUG) {
-                  console.log('Token: ' + token);
-                  console.log('Token-hash: ' + tokenHash);
-                }
+                debugPrint('Token-hash: ' + tokenHash);
+
                 let _fromBits = sjcl.codec.hex.fromBits;
 
                 // Create new private/public keypairs for account
@@ -187,9 +182,7 @@ distort_ipfs.initIpfs = function() {
                     if(err) {
                       return reject2('Could not save account: ' + err);
                     }
-                    if(DEBUG) {
-                      console.log('Saved new account: ' + acc.peerId);
-                    }
+                    debugPrint('Saved new account: ' + acc.peerId);
                     return resolve2(true);
                   });
                 });
@@ -274,9 +267,7 @@ function packageMessage(msg) {
   delete msg.to;
   delete msg.message;
 
-  if(DEBUG) {
-    console.log("Packaged Message: " + JSON.stringify(msg));
-  }
+  debugPrint("Packaged Message: " + JSON.stringify(msg));
   return msg;
 }
 
@@ -293,9 +284,7 @@ distort_ipfs._dequeueMsg = function () {
   var bootstrapPromise = Promise.resolve(true);
   if(typeof (config.ipfsNode.bootstrap) === "object" && parseInt(config.ipfsNode.bootstrap.length) > 0) {
     bootstrapPromise = bootstrapPeers(self.ipfsNode).catch(err => {
-      if(DEBUG) {
-        console.error('Failed to complete bootstrap list: ' + err);
-      }
+      debugPrintError('Failed to complete bootstrap list: ' + err);
     });
   }
   bootstrapPromise.then(() => {
@@ -346,15 +335,11 @@ distort_ipfs._dequeueMsg = function () {
         }]).sort('lastStatusChange')
           .exec(function(err, msgs) {
 
-          if(DEBUG) {
-            console.log('Active group: ' + group.name);
-            console.log('Queried messages: ' + JSON.stringify(msgs));
-          }
+          debugPrint('Active group: ' + group.name);
+          debugPrint('Queried messages: ' + JSON.stringify(msgs));
 
           const randPath = groupTree.randomPath();
-          if(DEBUG) {
-            console.log(JSON.stringify(randPath));
-          }
+          debugPrint(JSON.stringify(randPath));
 
           var m = {v: PROTOCOL_VERSION, fromAccount: account.accountName};
           var index = undefined;
@@ -435,9 +420,7 @@ distort_ipfs._publishCert = function() {
               groups: acct.cert.groups
             };
 
-            if(DEBUG) {
-              console.log("Packaged Certificate: " + JSON.stringify(cert));
-            }
+            debugPrint("Packaged Certificate: " + JSON.stringify(cert));
 
             // Publish message to IPFS
             try {
@@ -453,10 +436,8 @@ distort_ipfs._publishCert = function() {
 
 // Receive message logic
 function subscribeMessageHandler(msg) {
-  if(DEBUG) {
-    console.log('Received message: ' + msg.data);
-    console.log('Message from IPFS node: ' + msg.from);
-  }
+  debugPrint('Received message: ' + msg.data);
+  debugPrint('Message from IPFS node: ' + msg.from);
 
   if(!distort_ipfs.peerId) {
     throw console.error('Cannot handle received messages without an active account');
@@ -473,9 +454,7 @@ function subscribeMessageHandler(msg) {
       throw new Error('No support for given version: ' + msg.v);
     }
   } catch(err) {
-    if(DEBUG) {
-      console.error("Could not decode: " + err);
-    }
+    debugPrintError("Could not decode: " + err);
     return;
   }
 
@@ -512,9 +491,7 @@ function subscribeMessageHandler(msg) {
         cert = certs[i];
         break;
       } catch(e) {
-        if(DEBUG) {
-          console.log('Failed to decrypt: ' + e);
-        }
+        debugPrint('Failed to decrypt: ' + e);
       }
     }
     if(!cert) {
@@ -522,11 +499,10 @@ function subscribeMessageHandler(msg) {
     }
 
     // Received message!
-    if(DEBUG) {
-      console.log('Received message: ' + plaintext);
-    }
+    debugPrint('Received message: ' + plaintext);
 
     // TODO: perform verification as necessary
+    // NOTE: Marked as "wontfix" as of issue comment https://github.com/ryco117/distort-server/issues/1#issuecomment-461721028
 
     // Find group to save message to
     var groupPattern = /^(.*)-(all|\d+)$/;
@@ -601,9 +577,7 @@ function subscribeMessageHandler(msg) {
           if(err) {
             throw console.error(err);
           }
-          if(DEBUG) {
-            console.log('Saved received message to DB at index: ' + msg.index);
-          }
+          debugPrint('Saved received message to DB at index: ' + msg.index);
 
           conversation.latestStatusChangeDate = Date.now();
           conversation.save();
@@ -614,10 +588,8 @@ function subscribeMessageHandler(msg) {
 };
 
 function certificateMessageHandler(cert) {
-  if(DEBUG) {
-    console.log('Received certificate: ' + cert.data);
-    console.log('Certificate from: ' + cert.from);
-  }
+  debugPrint('Received certificate: ' + cert.data);
+  debugPrint('Certificate from: ' + cert.from);
 
   const from = cert.from;
   try {
@@ -629,9 +601,7 @@ function certificateMessageHandler(cert) {
       throw new Error('No support for given version: ' + cert.v);
     }
   } catch(err) {
-    if(DEBUG) {
-      console.error("Could not decode: " + err);
-    }
+    debugPrintError("Could not decode: " + err);
     return;
   }
 
@@ -645,9 +615,7 @@ function certificateMessageHandler(cert) {
     if(existingCert) {
       // Check if we have secret keys for cert (implying we own cert and thus it does not need updating)
       if(existingCert.key.encrypt.sec) {
-        if(DEBUG) {
-          console.log('This server owns certificate, no action needed');
-        }
+        debugPrint('This server owns certificate, no action needed');
         return;
       }
 
@@ -658,9 +626,7 @@ function certificateMessageHandler(cert) {
           return console.error(err);
         }
 
-        if(DEBUG) {
-          console.log("Updated key for peer: " + utils.formatPeerString(from, cert.fromAccount));
-        };
+        debugPrint("Updated key for peer: " + utils.formatPeerString(from, cert.fromAccount));
       });
     } else {
       // Invalidate any other certs for this peer
@@ -668,10 +634,8 @@ function certificateMessageHandler(cert) {
         if(err) {
           throw console.error(err);
         }
-        if(DEBUG) {
-          // TODO: replace JSON.stringify with something more elegant once I know what the object structure looks like
-          console.log("Invalidated " + JSON.stringify(updatedCount) + " certificates for: " + from + ":" + cert.fromAccount);
-        }
+        // TODO: replace JSON.stringify with something more elegant once I know what the object structure looks like
+        debugPrint("Invalidated " + JSON.stringify(updatedCount) + " certificates for: " + from + ":" + cert.fromAccount);
 
         // Create new certificate from the message
         var newCert = new Cert({
@@ -688,9 +652,7 @@ function certificateMessageHandler(cert) {
             return console.error(err);
           }
 
-          if(DEBUG) {
-            console.log("Imported new key for peer: " + from + ":" + cert.fromAccount);
-          }
+          debugPrint("Imported new key for peer: " + from + ":" + cert.fromAccount);
 
           // Update the certificate of any stored peers
           Peer.update({peerId: from, accountName: cert.fromAccount}, {$set: {cert: savedCert._id}}, function(err, updatedCount) {
@@ -698,9 +660,7 @@ function certificateMessageHandler(cert) {
               throw console.error(err);
             }
 
-            if(DEBUG) {
-              console.log("Updated: " + updatedCount + " cert references for peer: " + from);
-            }
+            debugPrint("Updated: " + updatedCount + " cert references for peer: " + from);
           });
         });
       });
@@ -724,9 +684,7 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
         if(err) {
           throw new Error('Failed to subscribe to: ' + topic + ' : ' + err);
         }
-        if(DEBUG) {
-          console.log('Now subscribed to: ' + topic);
-        }
+        debugPrint('Now subscribed to: ' + topic);
 
         self._subscribedTo[topic] = 1;
         return resolve(true);
@@ -741,9 +699,7 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
         if(err) {
           throw new Error('Failed to subscribe to: ' + topicCerts + ' : ' + err);
         }
-        if(DEBUG) {
-          console.log('Now subscribed to: ' + topicCerts);
-        }
+        debugPrint('Now subscribed to: ' + topicCerts);
 
         self._subscribedTo[topicCerts] = 1;
         return;
@@ -774,9 +730,7 @@ distort_ipfs.unsubscribe = function(name, subgroupIndex) {
       if(err) {
         throw new Error('Failed to unsubscribe from: ' + topic, err);
       }
-      if(DEBUG) {
-        console.log('Unsubscribed from: ' + topic);
-      }
+      debugPrint('Unsubscribed from: ' + topic);
       delete self._subscribedTo[topic];
       return resolve(true);
     });
@@ -792,9 +746,7 @@ distort_ipfs.unsubscribe = function(name, subgroupIndex) {
       if(err) {
         throw new Error('Failed to unsubscribe from: ' + topicCerts, err);
       }
-      if(DEBUG) {
-        console.log('Unsubscribed from: ' + topicCerts);
-      }
+      debugPrint('Unsubscribed from: ' + topicCerts);
 
       delete self._subscribedTo[topicCerts];
       return;
@@ -809,9 +761,7 @@ distort_ipfs.publish = function(topic, msg) {
     if(err) {
       throw new Error('Failed to publish to: ' + topic, err);
     }
-    if(DEBUG) {
-      console.log('Published to: ' + topic);
-    }
+    debugPrint('Published to: ' + topic);
   });
 };
 

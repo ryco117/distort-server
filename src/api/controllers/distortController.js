@@ -14,7 +14,6 @@ var mongoose = require('mongoose'),
   OutMessage = mongoose.model('OutMessages'),
   Peer = mongoose.model('Peers');
 
-const DEBUG = config.debug;
 const sendErrorJSON = utils.sendErrorJSON;
 const sendMessageJSON = utils.sendMessageJSON;
 const formatPeerString = utils.formatPeerString;
@@ -351,9 +350,7 @@ exports.postMessage = function(req, res) {
             return sendErrorJSON(res, err, 500);
           }
 
-          if(DEBUG) {
-            console.log('Saved enqueued message to DB at index: ' + msg.index);
-          }
+          utils.debugPrint('Saved enqueued message to DB at index: ' + msg.index);
 
           conversation.latestStatusChangeDate = Date.now();
           conversation.save(function(err) {

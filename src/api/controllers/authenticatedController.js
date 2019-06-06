@@ -7,17 +7,15 @@ var sjcl = require('../../sjcl'),
   mongoose = require('mongoose'),
   Account = mongoose.model('Accounts');
 
-const DEBUG = config.debug;
 const sendErrorJSON = utils.sendErrorJSON;
 const formatPeerString = utils.formatPeerString;
+const debugPrint = utils.debugPrint;
 
 // Retrieve messages for the specified group
 exports.authenticate = function(req, res, next) {
-  if(DEBUG) {
-    console.log('params: ' + JSON.stringify(req.params));
-    console.log('body: ' + JSON.stringify(req.body));
-    console.log('headers: ' + JSON.stringify(req.headers));
-  }
+  debugPrint('params: ' + JSON.stringify(req.params));
+  debugPrint('body: ' + JSON.stringify(req.body));
+  debugPrint('headers: ' + JSON.stringify(req.headers));
 
   // Check for necessary parameters
   if(!req.headers.peerid) {
@@ -41,7 +39,7 @@ exports.authenticate = function(req, res, next) {
   // Verify account exists and hash of account is correct
   Account.findOne({'accountName': accountName, 'peerId': peerId}, function(err, account) {
     if(err) {
-      return res.sendErrorJSON(res, err, 500);
+      return sendErrorJSON(res, err, 500);
     }
     if(!account) {
       return sendErrorJSON(res, 'No such account: ' + formatPeerString(peerId, accountName), 404);
