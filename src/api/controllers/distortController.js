@@ -562,37 +562,40 @@ exports.updateAccount = function(req, res) {
       return sendErrorJSON(res, 'Account "' + formatPeerString(req.headers.peerid, req.body.accountName) + '" does not exist', 404);
     }
 
+    // Enable if disabled, and disable if enabled
+    if(req.body.enabled === 'true' && account.enabled === 'false') {
+      // Enable account in DB
+      account.enabled = true;
+
+      // Start listening for this account
+      Group.find({owner: account._id}, function(err, groups) {
+        for(var i = 0; i < groups.length; i++) {
+          distort_ipfs.subscribe(groups[i].name, groups[i].subgroupIndex);
+        }
+      });
+    } else if(req.body.enabled === 'false' && account.enabled === 'true') {
+      // Only non-root users may be disabled
+      if(req.body.accountName === 'root') {
+        return sendErrorJSON(res, '"root" account cannot be disabled', 403);
+      }
+
+      // Disable account in DB
+      account.enabled = false;
+
+      // Stop listening for this account
+      Group.find({owner: account._id}, function(err, groups) {
+        for(var i = 0; i < groups.length; i++) {
+          distort_ipfs.unsubscribe(groups[i].name, groups[i].subgroupIndex);
+        }
+      });
+    }
+
     // set active group of account
     if(typeof req.body.activeGroup === 'string') {
       if(req.body.activeGroup) {
         account.activeGroup = req.body.activeGroup;
       } else {
         account.activeGroup = undefined;
-      }
-    }
-
-    // Only non-root users may be disabled
-    if(req.body.accountName !== 'root') {
-      if(req.body.enabled === 'true' && account.enabled === 'false') {
-        // Enable account in DB
-        account.enabled = true;
-
-        // Start listening for this account
-        Group.find({owner: account._id}, function(err, groups) {
-          for(var i = 0; i < groups.length; i++) {
-            distort_ipfs.subscribe(groups[i].name, groups[i].subgroupIndex);
-          }
-        });
-      } else if(req.body.enabled === 'false' && account.enabled === 'true') {
-        // Disable account in DB
-        account.enabled = false;
-
-        // Stop listening for this account
-        Group.find({owner: account._id}, function(err, groups) {
-          for(var i = 0; i < groups.length; i++) {
-            distort_ipfs.unsubscribe(groups[i].name, groups[i].subgroupIndex);
-          }
-        });
       }
     }
 

@@ -13,6 +13,7 @@ const debugPrint = utils.debugPrint;
 
 // Retrieve messages for the specified group
 exports.authenticate = function(req, res, next) {
+  debugPrint('api: ' + req.url);
   debugPrint('params: ' + JSON.stringify(req.params));
   debugPrint('body: ' + JSON.stringify(req.body));
   debugPrint('headers: ' + JSON.stringify(req.headers));

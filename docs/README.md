@@ -8,11 +8,22 @@ These technical docs are meant for homeserver administrators to be able to prope
     1. [Configuration](#configuration)
     1. [Launch Actions](#launch-actions)
     1. [Runtime Actions](#runtime-actions)
+        * [Handle API Requests](#handle-api-requests)
+        * [Dequeue Messages](#dequeue-messages)
+        * [Receive Messages](#receive-messages)
+        * [Renew Certificates](#renew-certificates)
+        * [Receive Certificates](#receive-certificates)
 1. [REST API](#rest-api)
     1. [Response Codes](#response-codes)
     1. [Returned JSON Objects](#returned-json-objects)
     1. [Unauthenticated Requests](#unauthenticated-requests)
+        * [/ipfs](#ipfs)
     1. [Authenticated Requests](#authenticated-requests)
+        * [/groups](#groups)
+        * [/groups/:group-name](#groups-name)
+        * [/groups/:group-name/:index-start/\[:index-end\]](#groups-name-index)
+        * [/account](#account)
+        * [/peers](#peers)
 
 ## Server Overview
 ### Configuration
@@ -45,38 +56,50 @@ so that trust of IPFS identities implies trust of the certificates they publish
     1. Initialize REST paths and launch server on configured port
     
 ### Runtime Actions
+<a name="handle-api-requests"></a>
 * **Handle API Requests** - Perform actions specified by the REST requests received on the configured port. Details described below
+<a name="dequeue-messages"></a>
 * **Dequeue Messages** - Every five minutes, dequeue a message for every enabled account with this IPFS identity on its active group. If a respective account has no active group, then nothing is dequeued for it. 
 When dequeuing a message, the server must first generate a random path through the binary group tree (with root `0` and `6` layers, for a total of 63 vertices, numbered breadth first). Then the server must dequeue the 
 first message in their queue which is to be sent to a peer whose node in the group intersects the path. If no messages to dequeue have valid recipient for the generated path, or if the message queue is empty, then a 
 random message is generated and encrypted to an ephemeral key, then broadcast to all channels on the generated path. If a message does meet the criteria, it is encrypted to the recipient and padded with additional bytes so all 
-real and fake messages are of equal size, then broadcast on all channels on the generated path.
+real and fake messages are of equal size, then broadcast on all channels on the generated path
+<a name="receive-messages"></a>
 * **Receive Messages** - Ensure message was published with a supported protocol version. Attempt to decrypt the message with all non-expired keys that match the IPFS identity is use. 
-If there is a local account whose certificate decrypts the message, store the message under a conversation uniquely identified by the local account, peer account, and group over which the message was sent.
-* **Renew certificates** - Every thirty minutes, for every enabled account with this IPFS identity, update its certificate's expiry date to be two weeks from the current time. Then, for each of those account, publish the 
+If there is a local account whose certificate decrypts the message, store the message under a conversation uniquely identified by the local account, peer account, and group over which the message was sent
+<a name="renew-certificates"></a>
+* **Renew Certificates** - Every thirty minutes, for every enabled account with this IPFS identity, update its certificate's expiry date to be two weeks from the current time. Then, for each of those account, publish the 
 certificate over its active group's certificate channel. If the account does not have an active group, its certificate will not be broadcast. Each certificate broadcast contains a public encryption key, 
 a public signing key (not used), the new expiration, and the group nodes the account is currently subscribed to (of which the active account is an element of)
-* **Receive certificates** - Ensure certificate was published with a supported protocol version. If the certificate's public keys are stored locally update the certificate's expiry date and groups. If the certificate is new, 
-invalidate any other certificates this peer has published and save the new one.
+<a name="receive-certificates"></a>
+* **Receive Certificates** - Ensure certificate was published with a supported protocol version. If the certificate's public keys are stored locally update the certificate's expiry date and groups. If the certificate is new, 
+invalidate any other certificates this peer has published and save the new one
 
 ## REST API
 
 ### Response Codes
+<a name="200"></a>
 * **200** - Request was performed successfully
     - This response code is returned if and only if the request was performed without error
+<a name="400"></a>
 * **400** - Bad Request
     - The client failed to specify required fields
     - ... fields were incorrectly formatted
     - ... gave incorrect parameters for the specified action/request
+<a name="401"></a>
 * **401** - Unauthorized
     - The client gave an incorrect authentication token
+<a name="403"></a>
 * **403** - Forbidden
     - The client attempted to view/modify an account it cannot access
     - ... attempted to authorize as an IPFS identity different from that of the connected IPFS node. This is to ensure client knows their broadcasting identity
+    - ... attempted to disable the root account
+<a name="404"></a>
 * **404** - Not Found
     - The client attempted to access a resource that does not exist
     - This can range from deleting a group that does not exist to updating an account which does not exist
     - Enqueuing messages to a peer for whom there is no local certificate will return `404` since the required resource does not yet locally stored
+<a name="500"></a>
 * **500** - Internal Server Error
     - An internal server error occurred and caused the request to be abandoned prematurely
     
@@ -120,6 +143,7 @@ invalidate any other certificates this peer has published and save the new one.
 
 ### Unauthenticated Requests
 Request paths:
+<a name="ipfs"></a>
 * **/ipfs**
     * **GET** - Fetch IPFS node ID
         - Return: server-message object; server-message containing the actively connected IPFS node's ID
@@ -132,6 +156,7 @@ Hash algorithm is PBKDF2 using SHA-256. The salt is the IPFS node ID (equivalent
 * (Optional) `accountname`: string; the name of the account to authorize as. Will default to `root` if this field is not specified or is the empty string
 
 Request paths:
+<a name="groups"></a>
 * **/groups**
 	* **GET** - Fetch groups
         - Return: array of group objects; the groups that the authenticated account belongs to
@@ -142,6 +167,7 @@ Request paths:
         - Action: adds the specified group with a random node at the given depth. 
         If the authenticating account is already subscribed to the named channel, only the node index is updated
         - Return: group object; the details of the added group
+<a name="groups-name"></a>
 * **/groups/:group-name**
 	* **GET** - Fetch conversations in group
 	    - Return: array of conversation objects; the conversations contained in group `group-name`
@@ -158,6 +184,7 @@ Request paths:
 	* **DELETE** - Leave group
 	    - Action: leaves the group `group-name` 
 	    - Return: server-message object; server-message containing a success string
+<a name="groups-name-index"></a>
 * **/groups/:group-name/:index-start/[:index-end]**
 	* **GET** - Read messages from conversation within range specified by `index-start` and optionally `index-end`, inclusively. End defaults to the last index in the database
         - Additional request headers:
@@ -166,6 +193,7 @@ Request paths:
 	    - Return: JSON object containing three fields, `conversation`, `in`, and `out`; the first is a string ID uniquely identifying the conversation's local object. 
 	    The latter two are arrays of received and sent message objects respectively.
 	    contains all received and sent messages in the uniquely specified conversation that have indices between `index-start` and `index-end` inclusively
+<a name="account"></a>
 * **/account**
 	* **GET** - Fetch account
 	    - Body Parameters:
@@ -176,9 +204,10 @@ Request paths:
 	        - (Optional) `accountName`: string; the name of the account to update. Only the `root` account can modify accounts other than itself
 	        - (Optional) `activeGroup`: string; the name of the group to make active on the account. If an active group is set, the empty string removes the active group
 	        - (Optional) `enabled`: string; truth value to assign to the specified account's enabled status, `true` or `false`. Only non-root accounts can be disabled
-	        - (Optional) `authToken`: string; new string to use as the authorization token. Conceptually equal to changing a password. Cannot be empty
+	        - (Optional) `authToken`: string; new string to use as the authorization token. Conceptually equivalent to changing a password. Cannot be empty
 	    - Action: updates the specified or authorizing account using the defined body parameters, does not change unspecified values
 	    - Return: account object; the details of the modified account after applying changes
+<a name="peers"></a>
 * **/peers**
 	* **GET** - Fetch peers
         - Return: array of peer objects; details of all the peers the authorized account has explicitly added
