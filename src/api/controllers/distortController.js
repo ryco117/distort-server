@@ -273,53 +273,58 @@ exports.postMessage = function(req, res) {
       // Can specify peer by friendly nickname or explicit peer-ID
       if(req.body.toPeerId) {
         Cert.findOne({accountName: req.body.toAccountName || 'root', peerId: req.body.toPeerId, status: 'valid'}, function(err, cert) {
+          if(err) {
+            return reject({msg: err, code: 500});
+          }
+
           if(!cert) {
-            reject('Could not find cert for given peer-ID. Plesase wait for their periodically posted certificate');
+            reject({
+              msg: 'Could not find cert for given peer-ID. Please wait for their periodically posted certificate',
+              code: 404
+            });
           } else {
             resolve(cert);
           }
         });
       } else {
-        Account.findOne({peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, account) {
+        Peer
+          .findOne({owner: group.owner._id, nickname: req.body.toNickname})
+          .populate('cert')
+          .exec(function(err, peer) {
           if(err) {
-            return sendErrorJSON(res, err, 500);
+            return reject({msg: err, code: 500});
           }
 
-          Peer
-            .findOne({owner: account._id, nickname: req.body.toNickname})
-            .populate('cert')
-            .exec(function(peer) {
-
-            if(!peer) {
-              reject('Could not find cert for given nickname. Plesase wait for their periodically posted certificate');
-            } else {
-              resolve(peer.cert);
-            }
-          });
+          if(!peer) {
+            reject({
+              msg: 'Could not find cert for given nickname. Please wait for their periodically posted certificate',
+              code: 404
+            });
+          } else {
+            resolve(peer.cert);
+          }
         });
       }
-    }).catch(function(err) {
-      return sendErrorJSON(res, err, 404);
     }).then(function(toCert) {
       // If posting to this account and group soon, assume it to be the active group
       try {
         updateActiveGroup(req.headers.peerid, group._id, req.headers.accountname);
       } catch(err) {
-        return sendErrorJSON(res, err, 500);
+        return reject({msg: err, code: 500});
       }
 
       // Must get conversation this message belongs to, or create a new one
       new Promise(function (resolve, reject) {
         Conversation.findOne({group: group._id, peerId: toCert.peerId, accountName: toCert.accountName}, function(err, conversation) {
           if(err) {
-            return reject(err);
+            return reject({msg: err, code: 500});
           }
           if(conversation) {
             return resolve(conversation);
           } else {
             Account.findOne({peerId: req.headers.peerid, accountName: req.headers.accountname}, function(err, account) {
               if(err) {
-                return reject(err);
+                return reject({msg: err, code: 500});
               }
               const newConversation = new Conversation({
                 group: group._id,
@@ -329,15 +334,13 @@ exports.postMessage = function(req, res) {
               });
               newConversation.save(function(err, conversation) {
                 if(err) {
-                  return reject(err);
+                  return reject({msg: err, code: 500});
                 }
                 return resolve(conversation);
               });
             });
           }
         });
-      }).catch(function(err) {
-        return sendErrorJSON(res, err, 500);
       }).then(function(conversation) {
         var outMessage = new OutMessage({
           conversation: conversation._id,
@@ -347,7 +350,7 @@ exports.postMessage = function(req, res) {
         });
         outMessage.save(function(err, msg) {
           if(err) {
-            return sendErrorJSON(res, err, 500);
+            return reject({msg: err, code: 500});
           }
 
           utils.debugPrint('Saved enqueued message to DB at index: ' + msg.index);
@@ -355,16 +358,16 @@ exports.postMessage = function(req, res) {
           conversation.latestStatusChangeDate = Date.now();
           conversation.save(function(err) {
             if(err) {
-              return sendErrorJSON(res, err, 500);
+              return reject({msg: err, code: 500});
             }
 
             // Only send success after all transactions succeed
             res.json(msg);
           });
         });
-      }).catch(function(err) {
-        return sendErrorJSON(res, err, 500);
       });
+    }).catch(function(err) {
+      return sendErrorJSON(res, err.msg, err.code);
     });
   });
 };
