@@ -19,11 +19,11 @@ const HOURS_PER_DAY = 24;
 const MINUTES_PER_HOUR = 60;
 const SECONDS_PER_MINUTE = 60;
 const MS_PER_SECOND = 1000;
-const PARANOIA = 8;
 const MESSAGE_LENGTH = 1024;  // Should not be configurable, but a constant of the protocol
 const PROTOCOL_VERSION = config.protocolVersion;
 const SUPPORTED_PROTOCOLS = [PROTOCOL_VERSION];
-const secp256k1 = sjcl.ecc.curves.k256;
+const secp256k1 = utils.secp256k1;
+const PARANOIA = utils.PARANOIA;
 const debugPrint = utils.debugPrint;
 const debugPrintError = utils.debugPrintError;
 
@@ -162,7 +162,7 @@ distort_ipfs.initIpfs = function() {
                       pub: sigPub
                     }
                   },
-                  lastExpiration: Date.now() + 14*HOURS_PER_DAY*MINUTES_PER_HOUR*SECONDS_PER_MINUTE*MS_PER_SECOND,
+                  lastExpiration: Date.now() + utils.CERT_LENGTH,
                   peerId: self.peerId
                 });
 
@@ -473,7 +473,7 @@ function subscribeMessageHandler(msg) {
     var cert = null;
     var plaintext;
     for(var i = 0; i < certs.length; i++) {
-      // Get shared key using ephereal ECC and secret key from account-certificate
+      // Get shared key using ephemeral ECC and secret key from account-certificate
       var e = new sjcl.bn(certs[i].key.encrypt.sec);
       e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA, e);
       var sharedAes = new sjcl.cipher.aes(e.sec.dh(tmpKey));

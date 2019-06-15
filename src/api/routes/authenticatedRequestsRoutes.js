@@ -1,6 +1,6 @@
 "use strict";
 module.exports = function(app) {
-  var distort = require('../controllers/distortController');
+  var distort = require('../controllers/authenticatedRequestsController');
 
   // Manage group membership
   app.route('/groups')
@@ -22,10 +22,10 @@ module.exports = function(app) {
   // Manage accounts
   app.route('/account')
     .get(distort.fetchAccount)
-    .put(distort.updateAccount);
+    .put(distort.updateAccount)
+    .delete(distort.deleteAccount);
     // TODO: Allow 'root' account to manage other accounts
-    //.post()
-    //.delete();
+    //.post()????
 
   // Manage peers
   app.route('/peers')
@@ -37,4 +37,8 @@ module.exports = function(app) {
   /*app.route('/queue')
     .get(distort.fetchQueue)
     .delete(distort.cancelMessage);*/
+
+  app.route('/signatures')
+    .get(distort.signText)
+    .post(distort.verifySignature);
 };

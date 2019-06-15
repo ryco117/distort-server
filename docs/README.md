@@ -18,12 +18,14 @@ These technical docs are meant for homeserver administrators to be able to prope
     1. [Returned JSON Objects](#returned-json-objects)
     1. [Unauthenticated Requests](#unauthenticated-requests)
         * [/ipfs](#ipfs)
+        * [/create-account](#create-account)
     1. [Authenticated Requests](#authenticated-requests)
         * [/groups](#groups)
         * [/groups/:group-name](#groups-name)
         * [/groups/:group-name/:index-start/\[:index-end\]](#groups-name-index)
         * [/account](#account)
         * [/peers](#peers)
+        * [/signatures](#signatures)
 
 ## Server Overview
 ### Configuration
@@ -147,6 +149,16 @@ Request paths:
 * **/ipfs**
     * **GET** - Fetch IPFS node ID
         - Return: server-message object; server-message containing the actively connected IPFS node's ID
+<a name="create-account"></a>
+* **/create-account**
+    * **POST** - Create account
+        - Body parameters:
+            - `peerId`: string; the IPFS identity to create the account for. "root" account for this identitity must sign `accounName`
+            - `accountName`: string; the name to assign to the new account
+            - `authToken`: string; the string token that will be used to authorize account operations. Recommended to be a password hash using PBKDF2 parameter with SHA256 and 1000, then encode with base64
+            - `signature`: string; the hexadecimal signature string created by the "root" account of the specified IPFS identity. This token allows for the creation of an account with the signed account name
+        - Action: creates an account with the specified properties and generates a new key pair. Does not subscribe to any groups
+        - Return: account object; details of the newly created account
         
 ### Authenticated Requests
 Note: Authenticated requests require the following headers: 
@@ -182,7 +194,7 @@ Request paths:
         - Action: enqueues message in the conversation uniquely specified by the group `group-name` and the identified peer
         - Return: message object; details of the enqueued outgoing message
 	* **DELETE** - Leave group
-	    - Action: leaves the group `group-name` 
+	    - Action: leaves the group `group-name` and deletes all conversations and messages within
 	    - Return: server-message object; server-message containing a success string
 <a name="groups-name-index"></a>
 * **/groups/:group-name/:index-start/[:index-end]**
@@ -207,6 +219,11 @@ Request paths:
 	        - (Optional) `authToken`: string; new string to use as the authorization token. Conceptually equivalent to changing a password. Cannot be empty
 	    - Action: updates the specified or authorizing account using the defined body parameters, does not change unspecified values
 	    - Return: account object; the details of the modified account after applying changes
+	* **DELETE** - Remove account - *Only root accounts can perform this action*
+	    - Body parameters:
+	        - `accountName`: string; the name of the account to remove. Field is required
+	    - Action: removes the specified account as well as their conversations and groups
+        - Return: server-message object; server-message containing a success string
 <a name="peers"></a>
 * **/peers**
 	* **GET** - Fetch peers
@@ -222,5 +239,19 @@ Request paths:
 	* **DELETE** - Remove peer
 	    - Body parameters:
 	        - `peerId`: string; the IPFS node ID of the peer to remove
-	        - (Optional) `accountName`: string; the account name of the peer. Defaults to `root` 
+	        - (Optional) `accountName`: string; the account name of the peer. Defaults to `root`
+	    - Action: removes the specified peer from the local database list of peers
         - Return: server-message object; server-message containing a success string
+<a name="signatures"></a>
+* **/signatures**
+    * **GET** - Sign text
+        - Body Parameters:
+	        - `plaintext`: string; the text to sign
+	    - Return: server-message object; hexadecimal string encoding of the requested signature
+	* **POST** - Verify signature
+        - Body Parameters:
+	        - `peerId`: string; the IPFS identity of the signing peer
+	        - `accountName`: string; the account of the signing peer
+	        - `plaintext`: string; the text to verify was signed by the specified peer
+	        - `signature`: string; the signature to verify
+	    - Return: server-message object; message `true` if the signature is verified, `false` otherwise

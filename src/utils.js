@@ -1,7 +1,12 @@
 "use strict";
 
-const config = require('./config');
+const config = require('./config'),
+  sjcl = require('./sjcl');
+
 const DEBUG = config.debug;
+
+exports.CERT_LENGTH =  14*24*3600*1000;   // 2 weeks
+exports.PARANOIA = 8;
 
 // Return string containing proper formatting of given peer
 exports.formatPeerString = function(peerId, accountName) {
@@ -33,3 +38,7 @@ exports.sendErrorJSON = function(res, err, statusCode) {
 exports.sendMessageJSON = function(res, msg) {
   return res.json({'message': msg});
 }
+
+// SJCL Elliptic curve constants
+exports.secp256k1 = sjcl.ecc.curves.k256;
+

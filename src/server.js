@@ -33,15 +33,15 @@ const connectDatabase = () => {
         app.use(bodyParser.json());
 
         // Allow for unauthenticated query-ing of server info
-        var nodeRouting = require('./api/routes/nodeRoutes');
+        var nodeRouting = require('./api/routes/accountlessRequestRoutes');
         nodeRouting(app);
 
         // Before allowing standard Routes, confirm authenticated
-        var authenticated = require('./api/routes/authenticatedRoutes');
+        var authenticated = require('./api/routes/authenticateAccountRoutes');
         authenticated(app);
 
         // Add proper routing to REST loop
-        var routes = require('./api/routes/distortRoutes');
+        var routes = require('./api/routes/authenticatedRequestsRoutes');
         routes(app);
 
         // Start main REST loop

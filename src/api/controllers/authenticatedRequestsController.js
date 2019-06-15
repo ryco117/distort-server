@@ -14,9 +14,12 @@ var mongoose = require('mongoose'),
   OutMessage = mongoose.model('OutMessages'),
   Peer = mongoose.model('Peers');
 
+const debugPrint = utils.debugPrint;
 const sendErrorJSON = utils.sendErrorJSON;
 const sendMessageJSON = utils.sendMessageJSON;
 const formatPeerString = utils.formatPeerString;
+const PARANOIA = utils.PARANOIA;
+const secp256k1 = utils.secp256k1;
 
 // Ensure the correct active Group-ID in DB
 function updateActiveGroup(peerId, groupId, accountName) {
@@ -31,6 +34,27 @@ function updateActiveGroup(peerId, groupId, accountName) {
     }
   });
 }
+// Remove all conversations (and their respective messages) that match given filter
+function removeMatchingConversations(filter) {
+  Conversation.find(filter, function(err, conversations) {
+    for(var i = 0; i < conversations.length; i++) {
+      InMessage.find({conversation: conversations[i]._id}, (err, ins) => {
+        if(err) return;
+        for(var j = 0; j < ins.length; j++) {
+          ins[j].remove();
+        }
+      });
+      OutMessage.find({conversation: conversations[i]._id}, (err, outs) => {
+        if(err) return;
+        for(var j = 0; j < outs.length; j++) {
+          outs[j].remove();
+        }
+      });
+      conversations[i].remove();
+    }
+  });
+}
+
 
 // List all (sub)group memberships through their groups and subgroup paths
 exports.listGroups = function(req, res) {
@@ -182,6 +206,7 @@ exports.addGroup = function(req, res) {
     });
   });
 };
+
 
 // List all (sub)group memberships through their groups and subgroup paths
 exports.fetchConversations = function(req, res) {
@@ -353,7 +378,7 @@ exports.postMessage = function(req, res) {
             return reject({msg: err, code: 500});
           }
 
-          utils.debugPrint('Saved enqueued message to DB at index: ' + msg.index);
+          debugPrint('Saved enqueued message to DB at index: ' + msg.index);
 
           conversation.latestStatusChangeDate = Date.now();
           conversation.save(function(err) {
@@ -408,13 +433,7 @@ exports.leaveGroup = function(req, res) {
       }
 
       // Remove all conversations associated with group
-      Conversation.find({group: group._id}, function(err, conversations) {
-        for(var i = 0; i < conversations.length; i++) {
-          InMessage.remove({conversation: conversations[i]._id});
-          OutMessage.remove({conversation: conversations[i]._id});
-          conversations[i].remove();
-        }
-      });
+      removeMatchingConversations({group: group._id});
 
       try {
         distort_ipfs.unsubscribe(group.name, group.subgroupIndex);
@@ -459,6 +478,7 @@ exports.leaveGroup = function(req, res) {
     });
   });
 };
+
 
 // Retrieve messages for the specified group
 exports.readConversationMessagesInRange = function(req, res) {
@@ -549,8 +569,7 @@ exports.fetchAccount = function(req, res) {
   });
 };
 
-
-// Create new account (if 'root')
+// Update account settings
 exports.updateAccount = function(req, res) {
   req.body.accountName = req.body.accountName || req.headers.accountname;
   if(req.headers.accountname !== 'root' && req.headers.accountname !== req.body.accountName) {
@@ -565,8 +584,11 @@ exports.updateAccount = function(req, res) {
       return sendErrorJSON(res, 'Account "' + formatPeerString(req.headers.peerid, req.body.accountName) + '" does not exist', 404);
     }
 
+    debugPrint((req.body.enabled === 'false') + ' ' + (account.enabled === true) + ' ' + (req.body.accountName === 'root'));
+    debugPrint(req.body.enabled + ' ' + account.enabled + ' ' + req.body.accountName);
+
     // Enable if disabled, and disable if enabled
-    if(req.body.enabled === 'true' && account.enabled === 'false') {
+    if(req.body.enabled === 'true' && account.enabled === false) {
       // Enable account in DB
       account.enabled = true;
 
@@ -576,7 +598,7 @@ exports.updateAccount = function(req, res) {
           distort_ipfs.subscribe(groups[i].name, groups[i].subgroupIndex);
         }
       });
-    } else if(req.body.enabled === 'false' && account.enabled === 'true') {
+    } else if(req.body.enabled === 'false' && account.enabled === true) {
       // Only non-root users may be disabled
       if(req.body.accountName === 'root') {
         return sendErrorJSON(res, '"root" account cannot be disabled', 403);
@@ -614,7 +636,42 @@ exports.updateAccount = function(req, res) {
       res.json(account);
     });
   });
-}
+};
+
+// Allow the root account to delete a specified non-root account
+exports.deleteAccount = function(req, res) {
+  if(req.headers.accountname !== 'root') {
+    return sendErrorJSON(res, 'Only the "root" account may remove accounts', 403);
+  }
+  if(!req.body.accountName) {
+    return sendErrorJSON(res, 'Must specify an account to remove', 400);
+  }
+
+  Account.findOne({peerId: req.headers.peerid, accountName: req.body.accountName}, function(err, account) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+    if(!account) {
+      return sendErrorJSON(res, 'Account "' + formatPeerString(req.headers.peerid, req.body.accountName) + '" does not exist', 404);
+    }
+
+    // Delete all conversations belonging to account
+    removeMatchingConversations({owner: account._id});
+    Group.remove({owner: account._id}, function(err) {
+      if(err) {
+        return sendErrorJSON(res, err, 500);
+      }
+    });
+
+    account.remove(function(err) {
+      if(err) {
+        return sendErrorJSON(res, err, 500);
+      }
+
+      sendMessageJSON(res, 'Successfully removed account: ' + req.body.accountName);
+    });
+  });
+};
 
 
 // Retrieve account peers
@@ -728,5 +785,61 @@ exports.removePeer = function(req, res) {
         sendMessageJSON(res, 'Successfully removed peer: ' + peerFullTitle);
       });
     });
+  });
+};
+
+
+// Allow client account to sign hash of input text with their signing key
+// This is necessary for allowing root account to allow generate account-creation tokens
+exports.signText = function (req, res) {
+  const peerId = req.headers.peerid;
+  const accountName = req.headers.accountname;
+  const plaintext = req.body.plaintext;
+
+  // Fetch certificate if exists
+  // NOTE: if reached code account must exist (they authenticated) so if missing is server error
+  Cert.findOne({accountName: accountName, peerId: peerId}, function(err, cert) {
+    if(err || !cert) {
+      return sendErrorJSON(res, err || 'Unable to find certificate for account: ' + formatPeerString(peerId, accountName), 500);
+    }
+
+    // Get signature string from plaintext
+    const sec = new sjcl.ecc.ecdsa.secretKey(secp256k1, new sjcl.bn(cert.key.sign.sec));
+    const sig = sjcl.codec.hex.fromBits(sec.sign(sjcl.hash.sha256.hash(plaintext), PARANOIA));
+
+    return sendMessageJSON(res, sig);
+  });
+};
+
+// Allow client to verify that a given peer signed the specified text
+exports.verifySignature = function(req, res) {
+  const peerId = req.body.peerId;
+  const accountName = req.body.accountName || 'root';
+  const plaintext = req.body.plaintext;
+  const signature = req.body.signature;
+
+  // Fetch certificate if exists
+  Cert.findOne({accountName: accountName, peerId: peerId}, function(err, cert) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+    if(!cert) {
+      return sendErrorJSON(res, 'Unable to find certificate for peer: ' + formatPeerString(peerId, accountName), 404);
+    }
+
+    // Get signature string from plaintext
+    const publicKeyStrs = cert.key.sign.pub.split(':');
+    const x = new sjcl.bn(publicKeyStrs[0]);
+    const y = new sjcl.bn(publicKeyStrs[1]);
+    const publicKey = new sjcl.ecc.ecdsa.publicKey(secp256k1, new sjcl.ecc.point(secp256k1, x, y));
+
+    var verified;
+    try {
+      verified = !!publicKey.verify(sjcl.hash.sha256.hash(plaintext), sjcl.codec.hex.toBits(signature));
+    } catch (e) {
+      verified = false;
+    }
+
+    return sendMessageJSON(res, verified.toString());
   });
 };
