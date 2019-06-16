@@ -109,19 +109,17 @@ invalidate any other certificates this peer has published and save the new one
 * **Account Object**
     - `accountName`: string; the name of the account under of current IPFS identity
     - `enabled`: boolean; true iff the account is set to actively listen for and send messages
-    - `_id`: string; hash-string uniquely identifying the local account object
     - `peerId`: string; the IPFS identity of the account
-    - `activeGroup`: string; the unique identifier of the group which is active. This ID is equivalent to the `_id` field of a group object
-* **Certificate Object**
-    - `groups`: array of strings; the set of groups subscribed to by the certificate's owner
+    - `activeGroup`: string; the string name the group which is active
 * **Conversation Object**
-    - `_id`: string; hash-string uniquely identifying the local conversation object
-    - `accountName`: string; the name of the account under the peer's IPFS identity
+    - `accountName`: string; the account name of the peer being conversed with
     - `height`: non negative integer; the number of messages stored locally in the conversation
+    - `group`: string; the name of the group the conversation belongs to
+    - `latestStatusChangeDate`: date-string; **YYYY-MM-DDThh:mm:ss.sssZ** representation of the last time a message was added to the conversation
+    - `peerId`: string; the IPFS identity of the peer being conversed with
 * **Error Object**
     - `error`: string; error message. Every response with a status code other than `200` will contain an error object
 * **Group Object**
-    - `_id`: string; hash string uniquely identifying the local group object
     - `name`: string; the name of the distort group
     - `subgroup`: non negative integer; the index of the node within the group tree that the account belongs to
 * **Message Object**
@@ -134,10 +132,9 @@ invalidate any other certificates this peer has published and save the new one
     - (Sent message only) `lastStatusChange`: date-string; **YYYY-MM-DDThh:mm:ss.sssZ** representation of the last time this message's status was changed
 * **Peer Object**
     - `accountName`: string; the name of the account under of IPFS identity. Defaults to `root`
-    - `_id`: string; hash string uniquely identifying the local peer object
     - (Optional) `nickname`: string; a locally unique identifier for this account
     - `peerId`: string; the IPFS identity of the peer
-    - `cert`: certificate object; contains information about the peer's certificate
+    - `groups`: array of strings; the set of groups subscribed to by the certificate's owner
 * **Server-Message Object**
     - `message`: string; a string response from the server
 

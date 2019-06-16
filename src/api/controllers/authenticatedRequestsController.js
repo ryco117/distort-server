@@ -36,22 +36,31 @@ function updateActiveGroup(peerId, groupId, accountName) {
 }
 // Remove all conversations (and their respective messages) that match given filter
 function removeMatchingConversations(filter) {
-  Conversation.find(filter, function(err, conversations) {
-    for(var i = 0; i < conversations.length; i++) {
-      InMessage.find({conversation: conversations[i]._id}, (err, ins) => {
-        if(err) return;
-        for(var j = 0; j < ins.length; j++) {
-          ins[j].remove();
-        }
-      });
-      OutMessage.find({conversation: conversations[i]._id}, (err, outs) => {
-        if(err) return;
-        for(var j = 0; j < outs.length; j++) {
-          outs[j].remove();
-        }
-      });
-      conversations[i].remove();
-    }
+  return new Promise((resolve, reject) => {
+    Conversation.find(filter, function(err, conversations) {
+      for(var i = 0; i < conversations.length; i++) {
+        InMessage.find({conversation: conversations[i]._id}, (err, ins) => {
+          if(err) {
+            return reject(err);
+          }
+          for(var j = 0; j < ins.length; j++) {
+            ins[j].remove();
+          }
+
+          OutMessage.find({conversation: conversations[i]._id}, (err, outs) => {
+            if(err) {
+              return reject(err);
+            }
+            for(var j = 0; j < outs.length; j++) {
+              outs[j].remove();
+            }
+
+            conversations[i].remove();
+            resolve(true);
+          });
+        });
+      }
+    });
   });
 }
 
@@ -82,8 +91,9 @@ exports.listGroups = function(req, res) {
 
     // Pointless to reinform of self as owner
     for(var i = 0; i < groups.length; i++) {
-      delete groups[i].owner;
+      delete groups[i]['owner'];
       delete groups[i]['__v'];
+      delete groups[i]['_id'];
     }
 
     res.json(groups);
@@ -155,6 +165,11 @@ exports.addGroup = function(req, res) {
                   return sendErrorJSON(res, err, 500);
                 }
 
+                group = group.toObject();
+                delete group['owner'];
+                delete group['_id'];
+                delete group['__v'];
+
                 // Succeeded all the trials, group is fully updated
                 return res.json(group);
               });
@@ -163,46 +178,51 @@ exports.addGroup = function(req, res) {
         }).catch(err => {
           return sendErrorJSON(res, err, 500);
         });
-      }
-
-      reqGroup.subgroupIndex = subI;
-      try {
-        distort_ipfs.subscribe(groupName, subI);
-      } catch(err) {
-        return sendErrorJSON(res, err, 500);
-      }
-
-      var newGroup = new Group(reqGroup);
-      newGroup.save(function(err, group) {
-        if(err) {
+      } else {
+        reqGroup.subgroupIndex = subI;
+        try {
+          distort_ipfs.subscribe(groupName, subI);
+        } catch(err) {
           return sendErrorJSON(res, err, 500);
         }
 
-        // If none active, set new group to be active group
-        if(!account.activeGroup) {
-          try {
-            updateActiveGroup(req.headers.peerid, group._id, req.headers.accountname);
-          } catch(err) {
-            return sendErrorJSON(res, err, 500);
-          }
-        }
-
-        // Include group in certificate
-        Cert.findById(account.cert, function(err, cert) {
+        var newGroup = new Group(reqGroup);
+        newGroup.save(function(err, group) {
           if(err) {
             return sendErrorJSON(res, err, 500);
           }
-          cert.groups.push(group.name + ":" + group.subgroupIndex);
-          cert.save(function(err) {
+
+          // If none active, set new group to be active group
+          if(!account.activeGroup) {
+            try {
+              updateActiveGroup(req.headers.peerid, group._id, req.headers.accountname);
+            } catch(err) {
+              return sendErrorJSON(res, err, 500);
+            }
+          }
+
+          // Include group in certificate
+          Cert.findById(account.cert, function(err, cert) {
             if(err) {
               return sendErrorJSON(res, err, 500);
             }
+            cert.groups.push(group.name + ":" + group.subgroupIndex);
+            cert.save(function(err) {
+              if(err) {
+                return sendErrorJSON(res, err, 500);
+              }
 
-            // Succeeded all the trials, group is fully added
-            res.json(group);
+              group = group.toObject();
+              delete group['__v'];
+              delete group['_id'];
+              delete group['owner']
+
+              // Succeeded all the trials, group is fully added
+              res.json(group);
+            });
           });
         });
-      });
+      }
     });
   });
 };
@@ -245,8 +265,10 @@ exports.fetchConversations = function(req, res) {
     }
 
     for(var i = 0; i < conversations.length; i++) {
-      delete conversations[i].owner;
-      delete conversations[i].group;
+      delete conversations[i]['_id'];
+      delete conversations[i]['__v'];
+      delete conversations[i]['owner'];
+      conversations[i].group = conversations[i].group.name;
     }
 
     res.json(conversations);
@@ -386,6 +408,11 @@ exports.postMessage = function(req, res) {
               return reject({msg: err, code: 500});
             }
 
+            msg = msg.toObject();            delete msg['_id'];
+            delete msg['__v'];
+            delete msg['conversation'];
+            delete msg['to'];
+
             // Only send success after all transactions succeed
             res.json(msg);
           });
@@ -460,10 +487,9 @@ exports.leaveGroup = function(req, res) {
           }
 
           const couple = group.name + ":" + group.subgroupIndex;
-          for(var i = 0; i < cert.groups.length; i++) {
+          for(var i = cert.groups.length-1; i >= 0; i--) {
             if(couple === cert.groups[i]) {
               cert.groups.splice(i, 1);
-              break;
             }
           }
           cert.save(function(err) {
@@ -542,7 +568,7 @@ exports.readConversationMessagesInRange = function(req, res) {
             return sendErrorJSON(res, err, 500);
           }
 
-          res.json({'conversation': conversation._id, 'in': inMsgs, 'out': outMsgs});
+          res.json({'in': inMsgs, 'out': outMsgs});
         });
       });
     });
@@ -559,12 +585,17 @@ exports.fetchAccount = function(req, res) {
 
   Account
     .findOne({peerId: req.headers.peerid, accountName: req.body.accountName})
-    .select('accountName activeGroup enabled peerId')
+    .select('-_id accountName activeGroup enabled peerId')
+    .populate('activeGroup')
     .exec(function(err, acct) {
     if(err) {
       return sendErrorJSON(res, err, 500);
     }
 
+    acct = acct.toObject();
+    if(!!acct.activeGroup) {
+      acct.activeGroup = acct.activeGroup.name;
+    }
     res.json(acct);
   });
 };
@@ -576,7 +607,11 @@ exports.updateAccount = function(req, res) {
     return sendErrorJSON(res, 'Not authorized to update this account', 403);
   }
 
-  Account.findOne({peerId: req.headers.peerid, accountName: req.body.accountName}, function(err, account){
+  Account
+    .findOne({peerId: req.headers.peerid, accountName: req.body.accountName})
+    .select('accountName activeGroup enabled peerId tokenHash')
+    .populate('activeGroup')
+    .exec(function(err, account){
     if(err) {
       return sendErrorJSON(res, err, 500);
     }
@@ -584,56 +619,97 @@ exports.updateAccount = function(req, res) {
       return sendErrorJSON(res, 'Account "' + formatPeerString(req.headers.peerid, req.body.accountName) + '" does not exist', 404);
     }
 
-    debugPrint((req.body.enabled === 'false') + ' ' + (account.enabled === true) + ' ' + (req.body.accountName === 'root'));
-    debugPrint(req.body.enabled + ' ' + account.enabled + ' ' + req.body.accountName);
+    // Keep track of active group's name, if exists
+    var finalActiveGroupName;
 
-    // Enable if disabled, and disable if enabled
-    if(req.body.enabled === 'true' && account.enabled === false) {
-      // Enable account in DB
-      account.enabled = true;
+    return new Promise((resolve, reject) => {
+      // Enable if disabled, and disable if enabled
+      if(req.body.enabled === 'true' && account.enabled === false) {
+        // Enable account in DB
+        account.enabled = true;
 
-      // Start listening for this account
-      Group.find({owner: account._id}, function(err, groups) {
-        for(var i = 0; i < groups.length; i++) {
-          distort_ipfs.subscribe(groups[i].name, groups[i].subgroupIndex);
+        // Start listening for this account
+        Group.find({owner: account._id}, function(err, groups) {
+          if(err) {
+            return reject({'err': err, 'code': 500});
+          }
+
+          for(var i = 0; i < groups.length; i++) {
+            distort_ipfs.subscribe(groups[i].name, groups[i].subgroupIndex);
+          }
+          return resolve(account);
+        });
+      } else if(req.body.enabled === 'false' && account.enabled === true) {
+        // Only non-root users may be disabled
+        if(req.body.accountName === 'root') {
+          return reject({'err': '"root" account cannot be disabled', 'code': 403});
         }
-      });
-    } else if(req.body.enabled === 'false' && account.enabled === true) {
-      // Only non-root users may be disabled
-      if(req.body.accountName === 'root') {
-        return sendErrorJSON(res, '"root" account cannot be disabled', 403);
-      }
 
-      // Disable account in DB
-      account.enabled = false;
+        // Disable account in DB
+        account.enabled = false;
 
-      // Stop listening for this account
-      Group.find({owner: account._id}, function(err, groups) {
-        for(var i = 0; i < groups.length; i++) {
-          distort_ipfs.unsubscribe(groups[i].name, groups[i].subgroupIndex);
-        }
-      });
-    }
+        // Stop listening for this account
+        Group.find({owner: account._id}, function(err, groups) {
+          if(err) {
+            return reject({'err': err, 'code': 500});
+          }
 
-    // set active group of account
-    if(typeof req.body.activeGroup === 'string') {
-      if(req.body.activeGroup) {
-        account.activeGroup = req.body.activeGroup;
+          for(var i = 0; i < groups.length; i++) {
+            distort_ipfs.unsubscribe(groups[i].name, groups[i].subgroupIndex);
+          }
+          return resolve(account);
+        });
       } else {
-        account.activeGroup = undefined;
+        return resolve(account);
       }
-    }
+    }).then((account) => {
+      return Group.findById(account.activeGroup).then((activeGroup) => {
+        if(err) {
+          throw {'err': err, 'code': 500};
+        }
 
-    // Allow updating of password by submitting new authentication-token
-    if(req.body.authToken && typeof req.body.authToken === "string") {
-      account.tokenHash = sjcl.codec.base64.fromBits(sjcl.hash.sha256.hash(req.body.authToken));
-    }
+        finalActiveGroupName = activeGroup.name;
 
-    account.save(function(err, account) {
-      if(err) {
-        return sendErrorJSON(res, err, 500);
+        return new Promise((resolve, reject) => {
+          // set active group of account
+          if(typeof req.body.activeGroup === 'string') {
+            if(req.body.activeGroup) {
+              Group.findOne({owner: account._id, name: req.body.activeGroup}, function(err, newActiveGroup) {
+                account.activeGroup = newActiveGroup;
+                finalActiveGroupName = newActiveGroup.name;
+                return resolve(account);
+              });
+            } else {
+              delete account['activeGroup'];
+              finalActiveGroupName = "";
+              return resolve(account);
+            }
+          } else {
+            return resolve(account);
+          }
+        });
+      });
+    }).then((account) => {
+      // Allow updating of password by submitting new authentication-token
+      if(req.body.authToken && typeof req.body.authToken === "string") {
+        account.tokenHash = sjcl.codec.base64.fromBits(sjcl.hash.sha256.hash(req.body.authToken));
       }
-      res.json(account);
+      return account;
+    }).then((account) => {
+      account.save(function(err, account) {
+        if(err) {
+          throw {err: err, code: 500};
+        }
+
+        account = account.toObject();
+        delete account['_id'];
+        delete account['__v'];
+        account.activeGroup = finalActiveGroupName;
+
+        res.json(account);
+      });
+    }).catch((error) => {
+      return sendErrorJSON(res, error.err, error.code);
     });
   });
 };
@@ -655,20 +731,20 @@ exports.deleteAccount = function(req, res) {
       return sendErrorJSON(res, 'Account "' + formatPeerString(req.headers.peerid, req.body.accountName) + '" does not exist', 404);
     }
 
-    // Delete all conversations belonging to account
-    removeMatchingConversations({owner: account._id});
-    Group.remove({owner: account._id}, function(err) {
-      if(err) {
-        return sendErrorJSON(res, err, 500);
-      }
-    });
-
-    account.remove(function(err) {
-      if(err) {
-        return sendErrorJSON(res, err, 500);
-      }
-
-      sendMessageJSON(res, 'Successfully removed account: ' + req.body.accountName);
+    // Delete all conversations and groups belonging to account
+    // Invalidate certificates
+    removeMatchingConversations({owner: account._id}).then(() => {
+      Group.remove({owner: account._id}).then(() => {
+        Cert.update({peerId: req.headers.peerid, accountName: req.body.accountName, status: 'valid'}, {$set: {status: 'invalidated'}}).then(() => {
+          account.remove(function(err) {
+            sendMessageJSON(res, 'Successfully removed account: ' + req.body.accountName);
+          });
+        });
+      }).catch(err => {
+        if(err) {
+          return sendErrorJSON(res, err, 500);
+        }
+      });
     });
   });
 };
@@ -684,10 +760,17 @@ exports.fetchPeers = function(req, res) {
     Peer
       .find({owner: acct._id})
       .populate({path: 'cert', select: '-_id groups'})
-      .select('accountName peerId nickname cert')
+      .select('-_id accountName peerId nickname cert')
       .exec(function(err, peers) {
       if(err) {
         return sendErrorJSON(res, err, 500);
+      }
+
+      for(var i = 0; i < peers.length; i++)  {
+        peers[i] = peers[i].toObject();
+        const groups = peers[i].cert.groups;
+        delete peers[i]['cert'];
+        peers[i].groups = groups;
       }
 
       res.json(peers);
@@ -739,7 +822,7 @@ exports.addPeer = function(req, res) {
           peer.cert = cert._id;
         }
 
-        peer.save(function(err) {
+        peer.save(function(err, peer) {
           if(err) {
             return sendErrorJSON(res, err, 500);
           }
@@ -747,6 +830,12 @@ exports.addPeer = function(req, res) {
             if(err) {
               return sendErrorJSON(res, err, 500);
             }
+
+            delete peer['_id'];
+            delete peer['__v'];
+            delete peer['owner'];
+            peer.cert = peer.cert.groups
+
             res.json(peer);
           });
         });

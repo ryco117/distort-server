@@ -30,7 +30,7 @@ exports.debugPrint = function(msg) {
 // Send error JSON
 exports.sendErrorJSON = function(res, err, statusCode) {
   res.status(statusCode);
-  err = (typeof err === "string") ? err : (err.message || String(err));
+  err = (typeof err === 'string') ? err : ((err instanceof Error) ? err.message : String(err));
   exports.debugPrintError(err + " : " + statusCode);
   return res.json({'error': err});
 }
