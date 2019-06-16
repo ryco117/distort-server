@@ -196,20 +196,20 @@ Request paths:
 <a name="groups-name-index"></a>
 * **/groups/:group-name/:index-start/[:index-end]**
 	* **GET** - Read messages from conversation within range specified by `index-start` and optionally `index-end`, inclusively. End defaults to the last index in the database
-        - Additional request headers:
-            * `conversationpeerid`: string; the IPFS node ID of the peer being conversed with in group `group-name`
-            * (Optional) `conversationaccountname`: string; the account name of the peer being conversed with. Defaults to `root`
+        - Query parameters:
+            * `peerId`: string; the IPFS node ID of the peer being conversed with in group `group-name`
+            * (Optional) `accountName`: string; the account name of the peer being conversed with. Defaults to `root`
 	    - Return: JSON object containing three fields, `conversation`, `in`, and `out`; the first is a string ID uniquely identifying the conversation's local object. 
 	    The latter two are arrays of received and sent message objects respectively.
 	    contains all received and sent messages in the uniquely specified conversation that have indices between `index-start` and `index-end` inclusively
 <a name="account"></a>
 * **/account**
 	* **GET** - Fetch account
-	    - Body Parameters:
+	    - Query parameters:
 	        - (Optional) `accountName`: string; the name of the account to retrieve. Only the `root` account can retrieve other accounts
         - Return: account object; details of the account that authorized the request, or the specified account if `root`
 	* **PUT** - Update account settings
-	    - Body Parameters:
+	    - Body parameters:
 	        - (Optional) `accountName`: string; the name of the account to update. Only the `root` account can modify accounts other than itself
 	        - (Optional) `activeGroup`: string; the name of the group to make active on the account. If an active group is set, the empty string removes the active group
 	        - (Optional) `enabled`: string; truth value to assign to the specified account's enabled status, `true` or `false`. Only non-root accounts can be disabled
@@ -226,7 +226,7 @@ Request paths:
 	* **GET** - Fetch peers
         - Return: array of peer objects; details of all the peers the authorized account has explicitly added
 	* **POST** - Add peer
-	    - Body Parameters:
+	    - Body parameters:
 	        - `peerId`: string; the IPFS node ID of the peer to add
 	        - (Optional) `accountName`: string; the account name of the peer. Defaults to `root`
 	        - (Optional) `nickname`: string; a human friendly name to assign to the peer
@@ -242,11 +242,11 @@ Request paths:
 <a name="signatures"></a>
 * **/signatures**
     * **GET** - Sign text
-        - Body Parameters:
+        - Query parameters:
 	        - `plaintext`: string; the text to sign
 	    - Return: server-message object; hexadecimal string encoding of the requested signature
 	* **POST** - Verify signature
-        - Body Parameters:
+        - Body parameters:
 	        - `peerId`: string; the IPFS identity of the signing peer
 	        - `accountName`: string; the account of the signing peer
 	        - `plaintext`: string; the text to verify was signed by the specified peer

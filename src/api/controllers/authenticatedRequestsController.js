@@ -536,7 +536,7 @@ exports.readConversationMessagesInRange = function(req, res) {
       return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 404);
     }
 
-    Conversation.findOne({group: group._id, peerId: req.headers.conversationpeerid, accountName: req.headers.conversationaccountname || 'root'}, function(err, conversation) {
+    Conversation.findOne({group: group._id, peerId: req.query.peerId, accountName: req.query.accountName || 'root'}, function(err, conversation) {
       if(err) {
         return sendErrorJSON(res, err, 500);
       }
@@ -578,13 +578,13 @@ exports.readConversationMessagesInRange = function(req, res) {
 
 // Retrieve account information
 exports.fetchAccount = function(req, res) {
-  req.body.accountName = req.body.accountName || req.headers.accountname;
-  if(req.headers.accountname !== 'root' && req.headers.accountname !== req.body.accountName) {
+  req.query.accountName = req.query.accountName || req.headers.accountname;
+  if(req.headers.accountname !== 'root' && req.headers.accountname !== req.query.accountName) {
     return sendErrorJSON(res, 'Not authorized to view this account', 403);
   }
 
   Account
-    .findOne({peerId: req.headers.peerid, accountName: req.body.accountName})
+    .findOne({peerId: req.headers.peerid, accountName: req.query.accountName})
     .select('-_id accountName activeGroup enabled peerId')
     .populate('activeGroup')
     .exec(function(err, acct) {
@@ -883,7 +883,7 @@ exports.removePeer = function(req, res) {
 exports.signText = function (req, res) {
   const peerId = req.headers.peerid;
   const accountName = req.headers.accountname;
-  const plaintext = req.body.plaintext;
+  const plaintext = req.query.plaintext;
 
   // Fetch certificate if exists
   // NOTE: if reached code account must exist (they authenticated) so if missing is server error

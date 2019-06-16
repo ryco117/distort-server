@@ -15,6 +15,7 @@ const debugPrint = utils.debugPrint;
 exports.authenticate = function(req, res, next) {
   debugPrint('api: ' + req.url);
   debugPrint('params: ' + JSON.stringify(req.params));
+  debugPrint('query: ' + JSON.stringify(req.query));
   debugPrint('body: ' + JSON.stringify(req.body));
   debugPrint('headers: ' + JSON.stringify(req.headers));
 
