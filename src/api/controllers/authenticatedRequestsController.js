@@ -663,32 +663,38 @@ exports.updateAccount = function(req, res) {
         return resolve(account);
       }
     }).then((account) => {
-      return Group.findById(account.activeGroup).then((activeGroup) => {
-        if(err) {
-          throw {'err': err, 'code': 500};
-        }
+      if(account.activeGroup) {
+        return Group.findById(account.activeGroup).then((activeGroup) => {
+          finalActiveGroupName = activeGroup.name;
 
-        finalActiveGroupName = activeGroup.name;
+          return new Promise((resolve, reject) => {
+            // set active group of account
+            if(typeof req.body.activeGroup === 'string') {
+              if(req.body.activeGroup) {
+                Group.findOne({owner: account._id, name: req.body.activeGroup}, function(err, newActiveGroup) {
+                  if(err) {
+                    return reject(err);
+                  }
 
-        return new Promise((resolve, reject) => {
-          // set active group of account
-          if(typeof req.body.activeGroup === 'string') {
-            if(req.body.activeGroup) {
-              Group.findOne({owner: account._id, name: req.body.activeGroup}, function(err, newActiveGroup) {
-                account.activeGroup = newActiveGroup;
-                finalActiveGroupName = newActiveGroup.name;
+                  account.activeGroup = newActiveGroup;
+                  finalActiveGroupName = newActiveGroup.name;
+                  return resolve(account);
+                });
+              } else {
+                delete account['activeGroup'];
+                finalActiveGroupName = "";
                 return resolve(account);
-              });
+              }
             } else {
-              delete account['activeGroup'];
-              finalActiveGroupName = "";
               return resolve(account);
             }
-          } else {
-            return resolve(account);
-          }
+          });
+        }).catch(err => {
+          throw {'err': err, 'code': 500};
         });
-      });
+      } else {
+        return Promise.resolve(account);
+      }
     }).then((account) => {
       // Allow updating of password by submitting new authentication-token
       if(req.body.authToken && typeof req.body.authToken === "string") {
@@ -696,17 +702,15 @@ exports.updateAccount = function(req, res) {
       }
       return account;
     }).then((account) => {
-      account.save(function(err, account) {
-        if(err) {
-          throw {err: err, code: 500};
-        }
-
+      account.save().then(account => {
         account = account.toObject();
         delete account['_id'];
         delete account['__v'];
         account.activeGroup = finalActiveGroupName;
 
         res.json(account);
+      }).catch(err => {
+          return sendErrorJSON(res, err, 500);
       });
     }).catch((error) => {
       return sendErrorJSON(res, error.err, error.code);
