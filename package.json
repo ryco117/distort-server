@@ -20,7 +20,9 @@
     "express": "^4.16.4",
     "ipfs-http-client": "^29.1.0",
     "mongoose": "^5.4.10",
-    "nodemon": "^1.18.10",
     "password-prompt": "^1.0.7"
+  },
+  "devDependencies": {
+    "nodemon": "^1.18.10"
   }
 }

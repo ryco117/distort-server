@@ -5,7 +5,7 @@ services:
     restart: always
     image: ryco117/distort-server:latest
     build: .
-    command: npm start
+    command: node server
     ports:
       - "6945:6945"
     depends_on:
