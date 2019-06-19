@@ -3,12 +3,9 @@ services:
   distort:
     container_name: distort-server
     restart: always
-    image: distort/distort-server:latest
+    image: ryco117/distort-server:latest
     build: .
     command: npm start
-    volumes:
-      - .:/usr/app/
-      - /usr/app/node_modules
     ports:
       - "6945:6945"
     depends_on:
@@ -25,8 +22,6 @@ services:
     image: ipfs/go-ipfs:latest
     command: daemon --enable-pubsub-experiment
     restart: always
-    volumes:
-      - ./tmp/ipfs-docker-data:/data/ipfs
     ports:
       - "4001:4001"
       - "127.0.0.1:5001:5001"
