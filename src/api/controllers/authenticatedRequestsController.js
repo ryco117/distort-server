@@ -547,6 +547,9 @@ exports.readConversationMessagesInRange = function(req, res) {
 
       const indexStart = parseInt(req.params.indexStart);
       const indexEnd = req.params.indexEnd ? parseInt(req.params.indexEnd) : conversation.height-1;
+      if(indexEnd - indexStart > config.maxRead) {
+        indexStart = indexEnd - config.maxRead;
+      }
 
       InMessage
         .find({'conversation': conversation._id})

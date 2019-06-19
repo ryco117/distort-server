@@ -1,8 +1,9 @@
 version: "3"
 services:
-  app:
-    container_name: distort_server
+  distort:
+    container_name: distort-server
     restart: always
+    image: distort/distort-server:latest
     build: .
     command: npm start
     volumes:

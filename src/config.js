@@ -11,3 +11,4 @@ exports.port = config.port;
 exports.ipfsNode = config.ipfsNode;
 exports.protocolVersion = config.protocolVersion;
 exports.mongoAddress = config.mongoAddress;
+exports.maxRead = config.maxRead;

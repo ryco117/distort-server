@@ -36,6 +36,7 @@ The server is configurable by the top-level JSON file `config.json`. It features
     * `bootstrap`: array of strings; A list of [IPFS multiaddrs](https://github.com/ipfs/go-ipfs-addr) to connect to at server start, 
     to help bootstrap connectivity between DistoRt peers
     * `port`: positive integer; API port of the IPFS node to use
+* `maxRead`: positive integer; the maximum number of conversation messages that can be returned by a single GET request
 * `mongoAddress`: string; the string to use to connect to the MongoDB to use. Eg., "mongodb://mongo:27017/distort"
 * `port`: positive integer; the local port to open for REST API calls
 * `protocolVersion`: string; the version string of the protocol this server will implement. Eg., "0.1.0"
@@ -199,9 +200,8 @@ Request paths:
         - Query parameters:
             * `peerId`: string; the IPFS node ID of the peer being conversed with in group `group-name`
             * (Optional) `accountName`: string; the account name of the peer being conversed with. Defaults to `root`
-	    - Return: JSON object containing three fields, `conversation`, `in`, and `out`; the first is a string ID uniquely identifying the conversation's local object. 
-	    The latter two are arrays of received and sent message objects respectively.
-	    contains all received and sent messages in the uniquely specified conversation that have indices between `index-start` and `index-end` inclusively
+	    - Return: JSON object containing two fields, `in` and `out`; two arrays containing received and sent message objects respectively.
+	    If the requested number of messages is greater than the homeserver's configured `maxRead` parameter, then the last `maxRead` messages are returned
 <a name="account"></a>
 * **/account**
 	* **GET** - Fetch account

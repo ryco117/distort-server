@@ -26,6 +26,7 @@ const secp256k1 = utils.secp256k1;
 const PARANOIA = utils.PARANOIA;
 const debugPrint = utils.debugPrint;
 const debugPrintError = utils.debugPrintError;
+const formatPeerString = utils.formatPeerString;
 
 // Create distort-on- ipfs object to export
 const distort_ipfs = {_subscribedTo: {}};
@@ -626,16 +627,17 @@ function certificateMessageHandler(cert) {
           return console.error(err);
         }
 
-        debugPrint("Updated key for peer: " + utils.formatPeerString(from, cert.fromAccount));
+        debugPrint("Updated key for peer: " + formatPeerString(from, cert.fromAccount));
       });
     } else {
       // Invalidate any other certs for this peer
-      Cert.update({peerId: from, accountName: cert.fromAccount, status: 'valid'}, {$set: {status: 'invalidated'}}, function(err, updatedCount) {
+      Cert.updateMany({peerId: from, accountName: cert.fromAccount, status: 'valid'}, {status: 'invalidated'}, function(err, updatedCount) {
         if(err) {
           throw console.error(err);
         }
-        // TODO: replace JSON.stringify with something more elegant once I know what the object structure looks like
-        debugPrint("Invalidated " + JSON.stringify(updatedCount) + " certificates for: " + from + ":" + cert.fromAccount);
+        if(updatedCount.nModified > 0) {
+          debugPrint("Invalidated " + updatedCount.nModified + " certificates for: " + formatPeerString(from, cert.fromAccount));
+        }
 
         // Create new certificate from the message
         var newCert = new Cert({
@@ -652,15 +654,15 @@ function certificateMessageHandler(cert) {
             return console.error(err);
           }
 
-          debugPrint("Imported new key for peer: " + from + ":" + cert.fromAccount);
+          debugPrint("Imported new key for peer: " + formatPeerString(from, cert.fromAccount));
 
           // Update the certificate of any stored peers
-          Peer.update({peerId: from, accountName: cert.fromAccount}, {$set: {cert: savedCert._id}}, function(err, updatedCount) {
+          Peer.updateMany({peerId: from, accountName: cert.fromAccount}, {cert: savedCert._id}, function(err, updatedCount) {
             if(err) {
               throw console.error(err);
             }
 
-            debugPrint("Updated: " + updatedCount + " cert references for peer: " + from);
+            debugPrint("Updated: " + updatedCount.nModified + " cert references for peer: " + from);
           });
         });
       });
