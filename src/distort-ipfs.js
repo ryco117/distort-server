@@ -192,9 +192,11 @@ distort_ipfs.initIpfs = function() {
                   // Subscribe IPFS-node to all stored groups for account
                   andTheyStillFeelOhSoWastedOnMyself.push(Group.find({owner: account._id}));
                 }
-                return Promise.all(andTheyStillFeelOhSoWastedOnMyself).then(function(groups) {
-                    for(var i = 0; i < groups.length; i++) {
-                      self.subscribe(groups[i].name, groups[i].subgroupIndex);
+                return Promise.all(andTheyStillFeelOhSoWastedOnMyself).then(function(groupsArrays) {
+                    for(var i = 0; i < groupsArrays.length; i++) {
+                      for(var j = 0; j < groupsArrays[i].length; j++) {
+                        self.subscribe(groupsArrays[i][j].name, groupsArrays[i][j].subgroupIndex);
+                      }
                     }
                     return resolve2(true);
                 }).catch(err => {
