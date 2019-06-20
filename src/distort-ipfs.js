@@ -96,7 +96,7 @@ distort_ipfs.initIpfs = function() {
       // https://github.com/ipfs/go-ipfs/blob/c10f043f3bb7a48e8b43e7f4e35e1cbccf762c68/docs/experimental-features.md#message-signing
       self.ipfsNode.config.set('Pubsub.StrictSignatureVerification', true, (err) => {
         if(err) {
-          reject('Could not ensure key verification: ' + err);
+          return reject('Could not ensure key verification: ' + err);
         }
 
         // Attempt to bootstrap specified peers
