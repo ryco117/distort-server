@@ -128,11 +128,11 @@ distort_ipfs.initIpfs = function() {
                 debugPrint('Creating new account for IPFS peer-ID: ' + self.peerId);
 
                 // Password creation for new account
-                var autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
+                const autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
                 console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
                 const token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
                 console.log('REST Authentication Token: ' + token);
-                var tokenHash = sjcl.codec.base64.fromBits(_hash(token));
+                const tokenHash = sjcl.codec.base64.fromBits(_hash(token));
                 debugPrint('Token-hash: ' + tokenHash);
 
                 let _fromBits = sjcl.codec.hex.fromBits;
@@ -168,41 +168,38 @@ distort_ipfs.initIpfs = function() {
                 });
 
                 // Save for reference
-                newCert.save(function(err, cert) {
-                  if(err) {
-                    return reject2('Could not save account: ' + err);
-                  }
-
+                return newCert.save().then(function(cert) {
                   // Create and save new account schema
                   var newAccount = new Account({
                     cert: cert._id,
                     peerId: self.peerId,
                     tokenHash: tokenHash
                   });
-                  newAccount.save(function(err, acc) {
-                    if(err) {
-                      return reject2('Could not save account: ' + err);
-                    }
-                    debugPrint('Saved new account: ' + acc.peerId);
-                    return resolve2(true);
-                  });
+                  return newAccount.save();
+                }).then(function(acc) {
+                  debugPrint('Saved new account: ' + acc.peerId);
+                  return resolve2(true);
+                }).catch(err => {
+                  return reject2('Could not save to database: ' + err);
                 });
               } else {
+                var andTheyStillFeelOhSoWastedOnMyself = [];
+
                 // Account(s) for this IPFS node already exist
                 for(var i = 0; i < accounts.length; i++) {
                   const account = accounts[i];
 
                   // Subscribe IPFS-node to all stored groups for account
-                  Group.find({owner: account._id}, function(err, groups) {
-                    if(err) {
-                      return reject2('Could not search database: ' + err);
-                    }
+                  andTheyStillFeelOhSoWastedOnMyself.push(Group.find({owner: account._id}));
+                }
+                return Promise.all(andTheyStillFeelOhSoWastedOnMyself).then(function(groups) {
                     for(var i = 0; i < groups.length; i++) {
                       self.subscribe(groups[i].name, groups[i].subgroupIndex);
                     }
                     return resolve2(true);
-                  });
-                }
+                }).catch(err => {
+                    return reject2('Could not search database: ' + err);
+                });
               }
             }).then(() => {
               // Setup routines to run
@@ -394,6 +391,10 @@ distort_ipfs._publishCert = function() {
     .populate('activeGroup')
     .populate('cert')
     .exec(function(err, accounts) {
+      if(err) {
+        console.error('Failed to search database for enabled accounts: ' + err);
+      }
+
       for(var i = 0; i < accounts.length; i++) {
         const acct = accounts[i];
 

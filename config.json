@@ -6,8 +6,7 @@
     "port": 5001,
     "address": "ipfs",
     "bootstrap": [
-    	"/dns4/rypi.unix4all.com/tcp/4001/ipfs/QmTYMpuqohATncPuxRHpwNyLmnL1HdMf4WSBp2EpGsiLrN",
-    	"/ip4/34.83.158.252/tcp/4001/ipfs/QmcnWktPmEQauQwNRsbM96DvNojvER8SpEJ2G8YQttTF4J"
+    	"/dns4/rypi.unix4all.com/tcp/4001/ipfs/QmTYMpuqohATncPuxRHpwNyLmnL1HdMf4WSBp2EpGsiLrN"
     ]
   },
   "mongoAddress": "mongodb://mongo:27017/distort",
