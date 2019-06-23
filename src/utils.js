@@ -17,7 +17,7 @@ exports.formatPeerString = function(peerId, accountName) {
 // Print message to console.error if debugging is configured
 exports.debugPrintError = function(msg) {
   if(DEBUG) {
-    console.error('DEBUG: ' + msg);
+    console.error('DEBUG-ERROR: ' + msg);
   }
 }
 // Print message to console.log if debugging is configured
@@ -41,4 +41,3 @@ exports.sendMessageJSON = function(res, msg) {
 
 // SJCL Elliptic curve constants
 exports.secp256k1 = sjcl.ecc.curves.k256;
-

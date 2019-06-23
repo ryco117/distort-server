@@ -1,6 +1,7 @@
 "use strict";
 
-var mongoose = require('mongoose'),
+const mongoose = require('mongoose'),
+  twit = require('twit'),
   sjcl = require('../../sjcl'),
   distort_ipfs = require('../../distort-ipfs'),
   groupTree = require('../../groupTree'),
@@ -12,7 +13,8 @@ var mongoose = require('mongoose'),
   Group = mongoose.model('Groups'),
   InMessage = mongoose.model('InMessages'),
   OutMessage = mongoose.model('OutMessages'),
-  Peer = mongoose.model('Peers');
+  Peer = mongoose.model('Peers'),
+  SocialMediaLink = mongoose.model('SocialMediaLinks');
 
 const debugPrint = utils.debugPrint;
 const sendErrorJSON = utils.sendErrorJSON;
@@ -612,7 +614,7 @@ exports.updateAccount = function(req, res) {
 
   Account
     .findOne({peerId: req.headers.peerid, accountName: req.body.accountName})
-    .select('accountName activeGroup enabled peerId tokenHash')
+    .select('_id accountName activeGroup enabled peerId tokenHash')
     .populate('activeGroup')
     .exec(function(err, account){
     if(err) {
@@ -623,10 +625,11 @@ exports.updateAccount = function(req, res) {
     }
 
     // Keep track of active group's name, if exists
-    var finalActiveGroupName;
+    var finalActiveGroupName = "";
 
     return new Promise((resolve, reject) => {
       // Enable if disabled, and disable if enabled
+      ////
       if(req.body.enabled === 'true' && account.enabled === false) {
         // Enable account in DB
         account.enabled = true;
@@ -666,38 +669,40 @@ exports.updateAccount = function(req, res) {
         return resolve(account);
       }
     }).then((account) => {
-      if(account.activeGroup) {
-        return Group.findById(account.activeGroup).then((activeGroup) => {
+      // Change active group of account
+      ////
+      return Group.findById(account.activeGroup).then((activeGroup) => {
+        if(activeGroup) {
           finalActiveGroupName = activeGroup.name;
+        }
 
-          return new Promise((resolve, reject) => {
-            // set active group of account
-            if(typeof req.body.activeGroup === 'string') {
-              if(req.body.activeGroup) {
-                Group.findOne({owner: account._id, name: req.body.activeGroup}, function(err, newActiveGroup) {
-                  if(err) {
-                    return reject(err);
-                  }
-
-                  account.activeGroup = newActiveGroup;
-                  finalActiveGroupName = newActiveGroup.name;
-                  return resolve(account);
-                });
-              } else {
-                delete account['activeGroup'];
-                finalActiveGroupName = "";
-                return resolve(account);
+        // set active group of account
+        if('activeGroup' in req.body) {
+          if(req.body.activeGroup) {
+            return Group.findOne({owner: account._id, name: req.body.activeGroup}).then(newActiveGroup => {
+              if(!newActiveGroup) {
+                throw "GROUP_DOES_NOT_EXIST";
               }
-            } else {
-              return resolve(account);
-            }
-          });
-        }).catch(err => {
+
+              account.activeGroup = newActiveGroup;
+              finalActiveGroupName = newActiveGroup.name;
+              return account;
+            });
+          } else {
+            account.activeGroup = undefined;
+            finalActiveGroupName = "";
+            return account;
+          }
+        } else {
+          return account;
+        }
+      }).catch(err => {
+        if(err === "GROUP_DOES_NOT_EXIST") {
+          throw {'err': 'Account does not belong to group ' + req.body.activeGroup, 'code': 404};
+        } else {
           throw {'err': err, 'code': 500};
-        });
-      } else {
-        return Promise.resolve(account);
-      }
+        }
+      });
     }).then((account) => {
       // Allow updating of password by submitting new authentication-token
       if(req.body.authToken && typeof req.body.authToken === "string") {
@@ -705,15 +710,17 @@ exports.updateAccount = function(req, res) {
       }
       return account;
     }).then((account) => {
-      account.save().then(account => {
+      account.save(function(err, account) {
+        if(err) {
+         throw {'err': err, 'code': 500};
+        }
         account = account.toObject();
         delete account['_id'];
         delete account['__v'];
+        delete account['cert'];
         account.activeGroup = finalActiveGroupName;
 
         res.json(account);
-      }).catch(err => {
-          return sendErrorJSON(res, err, 500);
       });
     }).catch((error) => {
       return sendErrorJSON(res, error.err, error.code);
@@ -824,11 +831,7 @@ exports.addPeer = function(req, res) {
           return sendErrorJSON(res, "Cannot add a peer until discovery of their certificate. Please wait for their next routine certificate post", 404);
         }
 
-        // If there exists a certificate for this user already, assign to this peer
-        if(cert) {
-          peer.cert = cert._id;
-        }
-
+        peer.cert = cert._id;
         peer.save(function(err, peer) {
           if(err) {
             return sendErrorJSON(res, err, 500);
@@ -883,6 +886,104 @@ exports.removePeer = function(req, res) {
     });
   });
 };
+
+
+// Allow /social-media api to return the validated distort identity
+// of the specified social media handle
+exports.getDistortIdentity = function(req, res) {
+  const platform = req.query.platform;
+  const handle = req.query.handle;
+
+  if(!handle || !platform) {
+    return sendErrorJSON(res, 'Must specify social media platform and user identity', 400);
+  }
+
+  SocialMediaLink
+    .findOne({platform: platform, handle: handle})
+    .populate('cert')
+    .exec(function(err, link) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+
+    if(link) {
+      const fullAddress = formatPeerString(link.cert.peerId, link.cert.accountName);
+      debugPrint(platform+':'+handle + ' <-> ' + fullAddress);
+
+      return sendMessageJSON(res, fullAddress);
+    } else {
+      return sendErrorJSON(res, 'No validating distort account was found', 404);
+    }
+  });
+}
+
+// Allow /social-media api to link accounts to existing social media identities
+exports.setIdentity = function(req, res) {
+  const peerId = req.headers.peerid;
+  const accountName = req.headers.accountname;
+
+  if(!req.body.platform) {
+    return sendErrorJSON(res, 'Must specify social-media platform', 400);
+  }
+
+  Account
+    .findOne({peerId: peerId, accountName: accountName})
+    .populate('cert')
+    .exec(function(err, account) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+
+    const socialMedia = account.cert.socialMedia;
+    switch(req.body.platform) {
+      case 'twitter':
+        // Remove existing Twitter entries so they may be updated (or removed if specified as empty)
+        for(var i = socialMedia.length-1; i >= 0; i--) {
+          if('twitter' === socialMedia[i].platform) {
+            socialMedia.splice(i, 1);
+          }
+        }
+
+        if(req.body.handle && req.body.key) {
+          const twitter = {platform: 'twitter', handle: req.body.handle};
+          const twitterKey = {};
+          try {
+            // Retrieve all necessary fields for Twitter authentication
+            const twitterInfo = JSON.parse(req.body.key);
+            if(twitterInfo.access_token) {
+              twitterKey.access_token = twitterInfo.access_token;
+            } else { throw false; }
+            if(twitterInfo.access_token_secret) {
+              twitterKey.access_token_secret = twitterInfo.access_token_secret;
+            } else { throw false; }
+            if(twitterInfo.consumer_key) {
+              twitterKey.consumer_key = twitterInfo.consumer_key;
+            } else { throw false; }
+            if(twitterInfo.consumer_secret) {
+              twitterKey.consumer_secret = twitterInfo.consumer_secret;
+            } else { throw false; }
+          } catch(err) {
+            return sendErrorJSON(res, 'Invalid Twitter authorization fields', 400);
+          }
+
+          debugPrint('twitter:'+twitter.handle + ' <-> ' + formatPeerString(peerId, accountName));
+          twitter.key = JSON.stringify(twitterKey);
+          socialMedia.push(twitter);
+          distort_ipfs.streamTwitter();
+        }
+
+        return Cert.findOneAndUpdate({'_id': account.cert._id}, {'$set': {'socialMedia': socialMedia}}, (err,cert) => {
+          if(err) {
+            sendErrorJSON(res, err, 500);
+          } else {
+            sendMessageJSON(res, 'Updated Twitter identity');
+          }
+        });
+      default:
+        return sendErrorJSON(res, 'No implementation for social-media platform "' + req.body.platform + '"', 400);
+    }
+  });
+}
 
 
 // Allow client account to sign hash of input text with their signing key

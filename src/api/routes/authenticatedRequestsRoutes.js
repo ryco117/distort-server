@@ -24,14 +24,16 @@ module.exports = function(app) {
     .get(distort.fetchAccount)
     .put(distort.updateAccount)
     .delete(distort.deleteAccount);
-    // TODO: Allow 'root' account to manage other accounts
-    //.post()????
 
   // Manage peers
   app.route('/peers')
     .get(distort.fetchPeers)
     .post(distort.addPeer)
     .delete(distort.removePeer);
+
+  app.route('/social-media')
+    .get(distort.getDistortIdentity)
+    .put(distort.setIdentity);
 
   // TODO: Manage queue
   /*app.route('/queue')

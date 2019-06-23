@@ -10,6 +10,7 @@ var express = require('express'),
   InMessage = require('./api/models/inMessageModel'),
   OutMessage = require('./api/models/outMessageModel'),
   Peer = require('./api/models/peerModel'),
+  SocialMediaLink = require('./api/models/socialMediaLinkModel'),
   bodyParser = require('body-parser'),
   distort_ipfs = require('./distort-ipfs');
 

@@ -1,18 +1,20 @@
 "use strict";
 
 var ipfsAPI = require('ipfs-http-client'),
+  mongoose = require('mongoose'),
+  twit = require('twit'),
   sjcl = require('./sjcl'),
   config = require('./config'),
   utils = require('./utils'),
   groupTree = require('./groupTree'),
-  mongoose = require('mongoose'),
   Account = mongoose.model('Accounts'),
   Cert = mongoose.model('Certs'),
   Conversation = mongoose.model('Conversations'),
   Group = mongoose.model('Groups'),
   Peer = mongoose.model('Peers'),
   InMessage = mongoose.model('InMessages'),
-  OutMessage = mongoose.model('OutMessages');
+  OutMessage = mongoose.model('OutMessages'),
+  SocialMediaLink = mongoose.model('SocialMediaLinks');
 
 // Some constants
 const HOURS_PER_DAY = 24;
@@ -27,6 +29,7 @@ const PARANOIA = utils.PARANOIA;
 const debugPrint = utils.debugPrint;
 const debugPrintError = utils.debugPrintError;
 const formatPeerString = utils.formatPeerString;
+
 
 // Create distort-on- ipfs object to export
 const distort_ipfs = {_subscribedTo: {}};
@@ -66,17 +69,26 @@ function hasGroupInPath(groupName, path, groups) {
   return false;
 }
 
-// Helper function to connect to all configured bootstrap peers.
+// Helper function to connect to at most 2 configured bootstrap peers.
 // This is significantly more important in the early phases as
 // DistoRt peers will be few and far between
 function bootstrapPeers(ipfsNode) {
-  const allBootstraps = [];
   const ipfsConfig = config.ipfsNode;
-  for(var i = 0; i < parseInt(ipfsConfig.bootstrap.length); i++) {
-    const j = i;
-    allBootstraps.push(ipfsNode.swarm.connect(ipfsConfig.bootstrap[i]));
+  const len = parseInt(ipfsConfig.bootstrap.length);
+  const promises = [];
+  const usedIndexes = {};
+
+  for(var i = 0; i < Math.min(2, len); i++) {
+    var k;
+    do {
+      k = Math.floor(Math.random() * len);
+    } while(usedIndexes[k]);
+
+    usedIndexes[k] = true;
+    promises.push(ipfsNode.swarm.connect(ipfsConfig.bootstrap[k]));
   }
-  return Promise.all(allBootstraps);
+
+  return Promise.all(promises);
 }
 
 distort_ipfs.initIpfs = function() {
@@ -210,6 +222,20 @@ distort_ipfs.initIpfs = function() {
 
               // Always publish certificate on start
               self._publishCert();
+
+              if(config.socialMedia) {
+                // Read and save validated social media identities
+                if(config.socialMedia.stream) {
+                  self.streamTwitter();
+                }
+
+                // Daily post to social media profiles linking to distort identities
+                if(config.socialMedia.link) {
+                  self.linkIntervalId = setInterval(() => self._linkAccounts(), HOURS_PER_DAY * MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND);
+                  self._linkAccounts();
+                }
+              }
+
               return resolve(true);
             }).catch(err => {
               throw reject(err);
@@ -394,7 +420,7 @@ distort_ipfs._publishCert = function() {
     .populate('cert')
     .exec(function(err, accounts) {
       if(err) {
-        console.error('Failed to search database for enabled accounts: ' + err);
+        return console.error('Failed to search database for enabled accounts: ' + err);
       }
 
       for(var i = 0; i < accounts.length; i++) {
@@ -404,6 +430,12 @@ distort_ipfs._publishCert = function() {
         acct.cert.save(function(err) {
           if(err) {
             console.error('Could not save updated cert expiration: ' + err);
+          }
+
+          // Strip our social media keys from certificate (as well as pointless object ID)
+          for(let platform of acct.cert.socialMedia) {
+            platform.key = undefined;
+            platform._id = undefined;
           }
 
           // If account has an active group, publish certificate over it
@@ -421,7 +453,8 @@ distort_ipfs._publishCert = function() {
                 }
               },
               expiration: acct.cert.lastExpiration,
-              groups: acct.cert.groups
+              groups: acct.cert.groups,
+              socialMedia: acct.cert.socialMedia
             };
 
             debugPrint("Packaged Certificate: " + JSON.stringify(cert));
@@ -437,6 +470,178 @@ distort_ipfs._publishCert = function() {
       }
   });
 }
+
+// Optionally link social media accounts to IPFS identity
+distort_ipfs._linkAccounts = function() {
+  const self = this;
+
+  Account
+    .find({peerId: self.peerId, enabled: true})
+    .populate('cert')
+    .exec(function(err, accounts) {
+    if(err) {
+      return console.error('Failed to search database for enabled accounts: ' + err);
+    }
+
+    // Accounts are linked by having the social media account post its own account's
+    // identity signed by the Distort identity they are claiming to have
+    const _signAccount = (secretString, id) => {
+      // Get signature string from plaintext
+      const sec = new sjcl.ecc.ecdsa.secretKey(secp256k1, new sjcl.bn(secretString));
+      return sjcl.codec.base64.fromBits(sec.sign(sjcl.hash.sha256.hash(id), PARANOIA));
+    };
+
+    // For every enabled account, post to their social media identities
+    for(var i = 0; i < accounts.length; i++) {
+      const account = accounts[i];
+      const fullAddress = formatPeerString(account.peerId, account.accountName);
+
+      for(let platform of account.cert.socialMedia) {
+        switch(platform.platform) {
+          case 'twitter':
+            var twitterKey;
+            try {
+              twitterKey = JSON.parse(platform.key);
+            } catch(err) {
+              console.error('Failed to parse twitter key: ' + platform.key + ': ' + err);
+              continue;
+            }
+
+            var T = new twit({
+              consumer_key: twitterKey.consumer_key,
+              consumer_secret: twitterKey.consumer_secret,
+              access_token: twitterKey.access_token,
+              access_token_secret: twitterKey.access_token_secret,
+              timeout_ms: 5000, // opt
+              strictSSL: true   // opt
+            });
+
+            // Get Twitter handle signature using certificate's signing key
+            const signature = _signAccount(account.cert.key.sign.sec, 'twitter://'+platform.handle);
+            T.post('statuses/update', {status: '#distort_id Hi! My distort identity is ' + fullAddress + ' , Signature ' + signature}, function(err, data, response) {
+              if(err) {
+                console.error('Error occured while linking to Twitter for account: ' + fullAddress + ': ' + err);
+              } else {
+                debugPrint('Successfully posted link to Twitter user @' + platform.handle + '\'s feed');
+              }
+            });
+            break;
+          default:
+            break;
+        }
+      }
+    }
+  });
+}
+
+
+// Optionally, stream Twitter #distort_id for distort identities to link
+distort_ipfs.streamTwitter = function() {
+  const self = this;
+
+  // Don't recreate stream if exists
+  if(self._twitter_stream) {
+    return Promise.resolve();
+  }
+
+  return Account
+    .find({peerId: self.peerId, enabled: true})
+    .populate('cert')
+    .exec().then(accounts => {
+    var twitterKey;
+
+    // Choose a random account to start search at.
+    // This is for fair assigning of feed-streaming among those with Twitter accounts
+    const start = Math.floor(accounts.length * Math.random());
+    for(var i = 0; i < accounts.length; i++) {
+      const k = (start+i) % accounts.length;
+      for(var j = 0; j < accounts[k].cert.socialMedia.length; j++) {
+        if(accounts[k].cert.socialMedia[j].platform === 'twitter') {
+          try {
+            twitterKey = JSON.parse(accounts[k].cert.socialMedia[j].key);
+            break;
+          } catch(err) {
+            console.error('ERROR: Can\'t read account\'s Twitter key: ' + err);
+            twitterKey = undefined;
+          }
+        }
+      }
+      if(twitterKey) {
+        break;
+      }
+    }
+
+    if(!twitterKey) {
+      throw 'no accounts have Twitter authentication';
+    }
+
+    const T = new twit({
+      consumer_key: twitterKey.consumer_key,
+      consumer_secret: twitterKey.consumer_secret,
+      access_token: twitterKey.access_token,
+      access_token_secret: twitterKey.access_token_secret,
+      timeout_ms: 5000, // opt
+      strictSSL: true   // opt
+    });
+
+    const linkExp = new RegExp("^#distort_id(\\s[a-zA-Z_.,!\\s-]*)?\\s([1-9A-HJ-NP-Za-km-z]+)(:[^\\s]+)?\\s,\\sSignature\\s([a-zA-Z0-9+/=]+)$", "g");
+    self._twitter_stream = T.stream('statuses/filter', {track: '#distort_id'});
+    self._twitter_stream.on('tweet', function(tweet) {
+      // Received a tweet on #distort_id
+      const handle = tweet.user.screen_name;
+      const tweetContent = tweet.extended_tweet.full_text;
+
+      debugPrint('Tweet from: ' + handle);
+      debugPrint(tweetContent);
+
+      // Check for correct syntax
+      const linkMatch = linkExp.exec(tweetContent);
+      if(linkMatch) {
+        const peerId = linkMatch[2];
+        const accountName = linkMatch[3] ? linkMatch[3].substring(1) : 'root';
+        const signature = linkMatch[4];
+
+        return Cert.findOne({peerId: peerId, accountName: accountName}).then(cert => {
+          if(!cert) {
+            throw 'no certificate found for peer';
+          }
+
+          const publicKeyStrs = cert.key.sign.pub.split(':');
+          const x = new sjcl.bn(publicKeyStrs[0]);
+          const y = new sjcl.bn(publicKeyStrs[1]);
+          const publicKey = new sjcl.ecc.ecdsa.publicKey(secp256k1, new sjcl.ecc.point(secp256k1, x, y));
+
+          try {
+            if(!publicKey.verify(sjcl.hash.sha256.hash('twitter://'+handle), sjcl.codec.base64.toBits(signature))) {
+              throw false;
+            }
+          } catch (e) {
+            throw 'signature failed validation';
+          }
+
+          // Valid signature. Update existing link or save new one
+          return SocialMediaLink.findOne({platform: 'twitter', handle: handle}).then(link => {
+            if(link) {
+              link.cert = cert._id;
+            } else {
+              link = new SocialMediaLink({platform: 'twitter', handle: handle, cert: cert._id});
+            }
+            return link.save();
+          }).then(link => {
+            debugPrint('twitter:'+handle + ' <-> ' + formatPeerString(peerId, accountName));
+          });
+        }).catch(err => {
+          debugPrint('Could not link identities: ' + err);
+        });
+      } else {
+        debugPrint('Could not link identities: invalid tweet format');
+      }
+    }); // End received-a-tweet
+  }).catch(err => {
+    console.error('ERROR: Failed to initiate Twitter stream: ' + err);
+  });
+};
+
 
 // Receive message logic
 function subscribeMessageHandler(msg) {
@@ -648,7 +853,8 @@ function certificateMessageHandler(cert) {
           key: cert.key,
           lastExpiration: cert.expiration,
           peerId: from,
-          groups: cert.groups
+          groups: cert.groups,
+          socialMedia: cert.socialMedia
         });
 
         // Save certificate

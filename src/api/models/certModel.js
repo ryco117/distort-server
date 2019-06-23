@@ -36,6 +36,21 @@ var CertSchema = new Schema({
     type: String,
     required: 'Must be associated with an IPFS peer-ID'
   },
+  socialMedia: [
+    {
+      handle: {
+        type: String,
+        required: 'Platform must be associated with a user handle (ID)'
+      },
+      key: {
+        type: String
+      },
+      platform: {
+        type: String,
+        required: 'Must specify the social-media platform to link identities with'
+      }
+    }
+  ],
   status: {
     type: String,
     enum: ['valid', 'invalidated'],

@@ -1,15 +1,19 @@
 {
   "debug": true,
-  "port": 6945,
-  "maxRead": 25,
   "ipfsNode": {
-    "port": 5001,
     "address": "ipfs",
     "bootstrap": [
     	"/ip4/34.66.232.169/tcp/4001/ipfs/QmWV77RTC7cwMPbPBfCbP68JGPt5ta8qPyiCWsUNZsXvpo",
-    	"/dns4/rypi.unix4all.com/tcp/4001/ipfs/QmYd3V5U6H7QbLWPQ6yKbtzvTVmegvTaDiBctw2DZvRRXC"
-    ]
+    	"/dns4/rypi.unix4all.com/tcp/4001/ipfs/QmbM9D3TTyZ8uT3DshJTti6r4r8rhSuna5WWPx4XJpFHYD"
+    ],
+    "port": 5001
   },
+  "maxRead": 25,
   "mongoAddress": "mongodb://mongo:27017/distort",
-  "protocolVersion": "0.1.0"
+  "port": 6945,
+  "protocolVersion": "0.1.0",
+  "socialMedia": {
+    "link": true,
+    "stream": true
+  }
 }
