@@ -58,7 +58,7 @@ exports.createAccount = function(req, res) {
       const publicKey = new sjcl.ecc.ecdsa.publicKey(secp256k1, new sjcl.ecc.point(secp256k1, x, y));
 
       try {
-        if(!publicKey.verify(sjcl.hash.sha256.hash(accountName), sjcl.codec.hex.toBits(signature))) {
+        if(!publicKey.verify(sjcl.hash.sha256.hash('create-account://'+accountName), sjcl.codec.hex.toBits(signature))) {
           throw false;
         }
       } catch (e) {

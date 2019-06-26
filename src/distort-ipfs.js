@@ -111,6 +111,14 @@ distort_ipfs.initIpfs = function() {
           return reject('Could not ensure key verification: ' + err);
         }
 
+        // Attempt to use experimental routing gossipsub, but do not fail on error
+        // https://github.com/ipfs/go-ipfs/blob/bc7c0c0f88f0f7eef497056c2edcf23d542550c6/docs/experimental-features.md#gossipsub
+        self.ipfsNode.config.set('Pubsub.Router', 'gossipsub', err => {
+          if(err) {
+            debugPrintError('Could not ensure "gossipsub" protocol: ' + err);
+          }
+        });
+
         // Attempt to bootstrap specified peers
         var bootstrapPromise = Promise.resolve(true);
         if(typeof (ipfsConfig.bootstrap) === "object" && parseInt(ipfsConfig.bootstrap.length) > 0) {
@@ -256,11 +264,13 @@ function packageMessage(msg) {
   var sharedAes;
   // If sending real message
   if(msg.to) {
-    // Pad message to size
+    // Pad message to size by generating random blocks of 8 hexadecimal chars
     var paddingSize = parseInt((MESSAGE_LENGTH - msg.message.length - 15)/8);
     var padding = sjcl.codec.hex.fromBits(sjcl.random.randomWords(paddingSize));
+
+    // Fill the remainder 0 <= r < 8 padding characters with 'a'
     while(padding.length + msg.message.length + 15 < MESSAGE_LENGTH) {
-      padding += "a";
+      padding += 'a';
     }
 
     // Create message
@@ -272,7 +282,7 @@ function packageMessage(msg) {
     var pubKey = new sjcl.ecc.elGamal.publicKey(secp256k1, pubPoint);
     sharedAes = new sjcl.cipher.aes(e.sec.dh(pubKey));
   } else {
-    // Generate bogus message
+    // Generate bogus message using 4096 bits to produce 1024 hex-characters
     msg.message = sjcl.codec.hex.fromBits(sjcl.random.randomWords(parseInt(MESSAGE_LENGTH/8)));
 
     // Since there is no real recipient, can use any key
@@ -433,15 +443,16 @@ distort_ipfs._publishCert = function() {
           }
 
           // Strip our social media keys from certificate (as well as pointless object ID)
+          acct.cert = acct.cert.toObject();
           for(let platform of acct.cert.socialMedia) {
-            platform.key = undefined;
-            platform._id = undefined;
+            delete platform.key;
+            delete platform._id;
           }
 
           // If account has an active group, publish certificate over it
           if(acct.activeGroup) {
             // Create cert for active account
-            var cert = {
+            const cert = {
               v: PROTOCOL_VERSION,
               fromAccount: acct.accountName,
               key: {
@@ -572,7 +583,8 @@ distort_ipfs.streamTwitter = function() {
     }
 
     if(!twitterKey) {
-      throw 'no accounts have Twitter authentication';
+      debugPrint('Failed to initiate Twitter stream: no accounts have Twitter authentication');
+      return;
     }
 
     const T = new twit({
