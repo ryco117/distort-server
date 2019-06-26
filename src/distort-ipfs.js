@@ -443,10 +443,9 @@ distort_ipfs._publishCert = function() {
           }
 
           // Strip our social media keys from certificate (as well as pointless object ID)
-          acct.cert = acct.cert.toObject();
-          for(let platform of acct.cert.socialMedia) {
-            delete platform.key;
-            delete platform._id;
+          const medias = [];
+          for(let socialMedia of acct.cert.socialMedia) {
+            medias.push({platform: socialMedia.platform, handle: socialMedia.handle});
           }
 
           // If account has an active group, publish certificate over it
@@ -465,7 +464,7 @@ distort_ipfs._publishCert = function() {
               },
               expiration: acct.cert.lastExpiration,
               groups: acct.cert.groups,
-              socialMedia: acct.cert.socialMedia
+              socialMedia: medias
             };
 
             debugPrint("Packaged Certificate: " + JSON.stringify(cert));
