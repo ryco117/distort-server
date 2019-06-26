@@ -1001,9 +1001,7 @@ exports.signText = function (req, res) {
     }
 
     // Get signature string from plaintext
-    const sec = new sjcl.ecc.ecdsa.secretKey(secp256k1, new sjcl.bn(cert.key.sign.sec));
-    const sig = sjcl.codec.hex.fromBits(sec.sign(sjcl.hash.sha256.hash(plaintext), PARANOIA));
-
+    const sig = utils.signText(cert.key.sign.sec, plaintext);
     return sendMessageJSON(res, sig);
   });
 };
@@ -1025,18 +1023,7 @@ exports.verifySignature = function(req, res) {
     }
 
     // Get signature string from plaintext
-    const publicKeyStrs = cert.key.sign.pub.split(':');
-    const x = new sjcl.bn(publicKeyStrs[0]);
-    const y = new sjcl.bn(publicKeyStrs[1]);
-    const publicKey = new sjcl.ecc.ecdsa.publicKey(secp256k1, new sjcl.ecc.point(secp256k1, x, y));
-
-    var verified;
-    try {
-      verified = !!publicKey.verify(sjcl.hash.sha256.hash(plaintext), sjcl.codec.hex.toBits(signature));
-    } catch (e) {
-      verified = false;
-    }
-
+    const verified = utils.verifySignature(cert.key.sign.pub, plaintext, signature);
     return sendMessageJSON(res, verified.toString());
   });
 };

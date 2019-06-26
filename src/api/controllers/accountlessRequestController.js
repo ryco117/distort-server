@@ -52,16 +52,7 @@ exports.createAccount = function(req, res) {
         return sendErrorJSON(res, 'No "root" account for IPFS ID: ' + peerId, 404);
       }
 
-      const publicKeyStrs = rootCert.key.sign.pub.split(':');
-      const x = new sjcl.bn(publicKeyStrs[0]);
-      const y = new sjcl.bn(publicKeyStrs[1]);
-      const publicKey = new sjcl.ecc.ecdsa.publicKey(secp256k1, new sjcl.ecc.point(secp256k1, x, y));
-
-      try {
-        if(!publicKey.verify(sjcl.hash.sha256.hash('create-account://'+accountName), sjcl.codec.hex.toBits(signature))) {
-          throw false;
-        }
-      } catch (e) {
+      if(!utils.verifySignature(rootCert.key.sign.pub, 'create-account://' + accountName, signature)) {
         return sendErrorJSON(res, 'Failed to verify signature', 401);
       }
 

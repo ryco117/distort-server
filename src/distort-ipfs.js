@@ -389,8 +389,11 @@ distort_ipfs._dequeueMsg = function () {
           }
           m = packageMessage(m);
 
-          // TODO: Sign ciphertext using accounts signing key
-          // NOTE: Marked as "wontfix" as of issue comment https://github.com/ryco117/distort-server/issues/1#issuecomment-461721028
+          // Sign ciphertext using accounts signing key
+          // Allows for the possibility of publically available IPFS nodes used for pubsub,
+          // with accounts still on private machines
+          m.signature = utils.signText(account.cert.key.sign.sec, m.cipher);
+
           // Publish message to IPFS
           try {
             distort_ipfs.publishToSubgroups(group.name, randPath, JSON.stringify(m));
@@ -464,8 +467,11 @@ distort_ipfs._publishCert = function() {
               },
               expiration: acct.cert.lastExpiration,
               groups: acct.cert.groups,
-              socialMedia: medias
+              signature: utils.signText(acct.cert.key.sign.sec, formatPeerString(self.peerId, acct.accountName))
             };
+            if(medias.length > 0) {
+              cert.socialMedia = medias;
+            }
 
             debugPrint("Packaged Certificate: " + JSON.stringify(cert));
 
@@ -493,14 +499,6 @@ distort_ipfs._linkAccounts = function() {
       return console.error('Failed to search database for enabled accounts: ' + err);
     }
 
-    // Accounts are linked by having the social media account post its own account's
-    // identity signed by the Distort identity they are claiming to have
-    const _signAccount = (secretString, id) => {
-      // Get signature string from plaintext
-      const sec = new sjcl.ecc.ecdsa.secretKey(secp256k1, new sjcl.bn(secretString));
-      return sjcl.codec.base64.fromBits(sec.sign(sjcl.hash.sha256.hash(id), PARANOIA));
-    };
-
     // For every enabled account, post to their social media identities
     for(var i = 0; i < accounts.length; i++) {
       const account = accounts[i];
@@ -527,8 +525,10 @@ distort_ipfs._linkAccounts = function() {
             });
 
             // Get Twitter handle signature using certificate's signing key
-            const signature = _signAccount(account.cert.key.sign.sec, 'twitter://'+platform.handle);
-            T.post('statuses/update', {status: '#distort_id Hi! My distort identity is ' + fullAddress + ' , Signature ' + signature}, function(err, data, response) {
+            const signature = utils.signText(account.cert.key.sign.sec, 'twitter://' + platform.handle);
+            const intros = ['Hi! My distort identity is ', 'Hello there, you can find me on distort at ', '', 'My ID is '];
+            const intro = intros[Math.floor(intros.length * Math.random())];
+            T.post('statuses/update', {status: '#distort_id ' + intro + fullAddress + ' , Signature ' + signature}, function(err, data, response) {
               if(err) {
                 console.error('Error occured while linking to Twitter for account: ' + fullAddress + ': ' + err);
               } else {
@@ -617,16 +617,7 @@ distort_ipfs.streamTwitter = function() {
             throw 'no certificate found for peer';
           }
 
-          const publicKeyStrs = cert.key.sign.pub.split(':');
-          const x = new sjcl.bn(publicKeyStrs[0]);
-          const y = new sjcl.bn(publicKeyStrs[1]);
-          const publicKey = new sjcl.ecc.ecdsa.publicKey(secp256k1, new sjcl.ecc.point(secp256k1, x, y));
-
-          try {
-            if(!publicKey.verify(sjcl.hash.sha256.hash('twitter://'+handle), sjcl.codec.base64.toBits(signature))) {
-              throw false;
-            }
-          } catch (e) {
+          if(!utils.verifySignature(cert.key.sign.pub, 'twitter://' + handle, signature)) {
             throw 'signature failed validation';
           }
 
@@ -655,7 +646,7 @@ distort_ipfs.streamTwitter = function() {
 
 
 // Receive message logic
-function subscribeMessageHandler(msg) {
+function messageHandler(msg) {
   debugPrint('Received message: ' + msg.data);
   debugPrint('Message from IPFS node: ' + msg.from);
 
@@ -678,136 +669,152 @@ function subscribeMessageHandler(msg) {
     return;
   }
 
-  // Find all certs that match the current IPFS node that have not expired
+  // Find latest cert from peer which has not expired and use it to verify signature
   Cert
-    .find({peerId: distort_ipfs.peerId})
+    .findOne({peerId: from, accountName: msg.fromAccount, status: 'valid'})
     .where('lastExpiration').gt(Date.now())
-    .exec(function(err, certs) {
-
-    // Get public key for elGamal
-    var tmpKey = msg.encrypt.split(':');
-    tmpKey = new sjcl.ecc.point(secp256k1, new sjcl.bn(tmpKey[0]), new sjcl.bn(tmpKey[1]));
-    tmpKey = new sjcl.ecc.elGamal.publicKey(secp256k1, tmpKey);
-
-    // Determine if any accounts can decrypt message
-    var cert = null;
-    var plaintext;
-    for(var i = 0; i < certs.length; i++) {
-      // Get shared key using ephemeral ECC and secret key from account-certificate
-      var e = new sjcl.bn(certs[i].key.encrypt.sec);
-      e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA, e);
-      var sharedAes = new sjcl.cipher.aes(e.sec.dh(tmpKey));
-
-      // Decrypt message here to check belongs to us
-      try {
-        const iv = sjcl.codec.base64.toBits(msg.iv);
-        plaintext = sjcl.codec.utf8String.fromBits(sjcl.mode.ccm.decrypt(sharedAes, sjcl.codec.base64.toBits(msg.cipher), iv));
-        plaintext = JSON.parse(plaintext);
-        plaintext = plaintext.m;
-        if(typeof plaintext !== "string") {
-          throw console.error('Failed to decrypt');
-        }
-
-        cert = certs[i];
-        break;
-      } catch(e) {
-        debugPrint('Failed to decrypt: ' + e);
-      }
-    }
-    if(!cert) {
-      return;
+    .exec(function(err, peerCert) {
+    if(err) {
+      throw new Error(err);
     }
 
-    // Received message!
-    debugPrint('Received message: ' + plaintext);
+    // Verify signatures on messages. This allows for the possibility of
+    // publically available IPFS nodes used for pushing pubsub messages
+    const verifiedSig = peerCert && msg.cipher && msg.signature &&
+      utils.verifySignature(peerCert.key.sign.pub, msg.cipher, msg.signature);
 
-    // TODO: perform verification as necessary
-    // NOTE: Marked as "wontfix" as of issue comment https://github.com/ryco117/distort-server/issues/1#issuecomment-461721028
-
-    // Find group to save message to
-    var groupPattern = /^(.*)-(all|\d+)$/;
-    if(!groupPattern.test(fromGroup)) {
-      throw console.error("Received message on improper group: " + fromGroup);
-    }
-    var groupName = groupPattern.exec(fromGroup)[1];
-    var groupIndex = groupPattern.exec(fromGroup)[2];
-    groupIndex = (groupIndex==="all") ? 0 : parseInt(groupIndex);
-
-    // Determine which group message was received on
-    Group.aggregate([
-      {
-        $lookup: {
-          from: 'accounts',
-          localField: 'owner',
-          foreignField: '_id',
-          as:'owner'
-        }
-      },
-      {
-        $unwind:'$owner'
-      },
-      {
-        $match: {
-          'name': groupName,
-          'subgroupIndex': groupIndex,
-          'owner.peerId': cert.peerId,
-          'owner.accountName': cert.accountName
-        }
-      }]).exec(function(err, group) {
-
-      group = group[0];
-      if(!group) {
-        throw console.error('Could not find a subscribed group: ' + JSON.stringify(fromGroup));
+    // Find all our certs that match the current IPFS node that have not expired
+    // and attempt to decrypt with them
+    Cert
+      .find({peerId: distort_ipfs.peerId})
+      .where('lastExpiration').gt(Date.now())
+      .exec(function(err, certs) {
+      if(err) {
+        throw new Error(err);
       }
 
-      // Determine conversation of message, or create a new one
-      new Promise(function(resolve, reject) {
-        Conversation.findOne({group: group._id, peerId: from, accountName: msg.fromAccount || 'root'}, function(err, conversation) {
-          if(err) {
-            throw new Error(err);
-          }
-          if(conversation) {
-            return resolve(conversation);
-          } else {
-            conversation = new Conversation({
-              group: group._id,
-              owner: group.owner._id,
-              peerId: from,
-              accountName: msg.fromAccount || 'root'
-            });
-            conversation.save(function(err, conversation) {
-              if(err) {
-                throw new Error(err);
-              }
-              resolve(conversation);
-            });
-          }
-        });
-      }).catch(function(err) {
-        throw console.error(err);
-      }).then(function(conversation) {
-        // Save message to DB
-        var inMessage = new InMessage({
-          conversation: conversation._id,
-          index: conversation.height++,
-          message: plaintext,
-          verified: false
-        });
-        inMessage.save(function(err, msg) {
-          if(err) {
-            throw console.error(err);
-          }
-          debugPrint('Saved received message to DB at index: ' + msg.index);
+      // Get public key for elGamal
+      var tmpKey = msg.encrypt.split(':');
+      tmpKey = new sjcl.ecc.point(secp256k1, new sjcl.bn(tmpKey[0]), new sjcl.bn(tmpKey[1]));
+      tmpKey = new sjcl.ecc.elGamal.publicKey(secp256k1, tmpKey);
 
-          conversation.latestStatusChangeDate = Date.now();
-          conversation.save();
+      // Determine if any accounts can decrypt message
+      var cert = null;
+      var plaintext;
+      for(var i = 0; i < certs.length; i++) {
+        // Get shared key using ephemeral ECC and secret key from account-certificate
+        var e = new sjcl.bn(certs[i].key.encrypt.sec);
+        e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA, e);
+        var sharedAes = new sjcl.cipher.aes(e.sec.dh(tmpKey));
+
+        // Decrypt message here to check belongs to us
+        try {
+          const iv = sjcl.codec.base64.toBits(msg.iv);
+          plaintext = sjcl.codec.utf8String.fromBits(sjcl.mode.ccm.decrypt(sharedAes, sjcl.codec.base64.toBits(msg.cipher), iv));
+          plaintext = JSON.parse(plaintext);
+          plaintext = plaintext.m;
+          if(typeof plaintext !== "string") {
+            throw console.error('Failed to decrypt');
+          }
+
+          cert = certs[i];
+          break;
+        } catch(e) {
+          debugPrint('Failed to decrypt: ' + e);
+        }
+      }
+      if(!cert) {
+        return;
+      }
+
+      // Received message!
+      console.log('Received message: ' + plaintext);
+
+      // Find group to save message to
+      var groupPattern = /^(.*)-(all|\d+)$/;
+      if(!groupPattern.test(fromGroup)) {
+        throw console.error("Received message on improper group: " + fromGroup);
+      }
+      var groupName = groupPattern.exec(fromGroup)[1];
+      var groupIndex = groupPattern.exec(fromGroup)[2];
+      groupIndex = (groupIndex==="all") ? 0 : parseInt(groupIndex);
+
+      // Determine which group message was received on
+      Group.aggregate([
+        {
+          $lookup: {
+            from: 'accounts',
+            localField: 'owner',
+            foreignField: '_id',
+            as:'owner'
+          }
+        },
+        {
+          $unwind:'$owner'
+        },
+        {
+          $match: {
+            'name': groupName,
+            'subgroupIndex': groupIndex,
+            'owner.peerId': cert.peerId,
+            'owner.accountName': cert.accountName
+          }
+        }]).exec(function(err, group) {
+
+        group = group[0];
+        if(!group) {
+          throw console.error('Could not find a subscribed group: ' + JSON.stringify(fromGroup));
+        }
+
+        // Determine conversation of message, or create a new one
+        new Promise(function(resolve, reject) {
+          Conversation.findOne({group: group._id, peerId: from, accountName: msg.fromAccount || 'root'}, function(err, conversation) {
+            if(err) {
+              throw new Error(err);
+            }
+            if(conversation) {
+              return resolve(conversation);
+            } else {
+              conversation = new Conversation({
+                group: group._id,
+                owner: group.owner._id,
+                peerId: from,
+                accountName: msg.fromAccount || 'root'
+              });
+              conversation.save(function(err, conversation) {
+                if(err) {
+                  throw new Error(err);
+                }
+                resolve(conversation);
+              });
+            }
+          });
+        }).catch(function(err) {
+          throw console.error(err);
+        }).then(function(conversation) {
+          // Save message to DB
+          var inMessage = new InMessage({
+            conversation: conversation._id,
+            index: conversation.height++,
+            message: plaintext,
+            verified: verifiedSig
+          });
+          inMessage.save(function(err, msg) {
+            if(err) {
+              throw console.error(err);
+            }
+            debugPrint('Saved received message to DB at index: ' + msg.index);
+
+            conversation.latestStatusChangeDate = Date.now();
+            conversation.save();
+          });
         });
       });
     });
   });
 };
 
-function certificateMessageHandler(cert) {
+function certificateHandler(cert) {
   debugPrint('Received certificate: ' + cert.data);
   debugPrint('Certificate from: ' + cert.from);
 
@@ -821,8 +828,12 @@ function certificateMessageHandler(cert) {
       throw new Error('No support for given version: ' + cert.v);
     }
   } catch(err) {
-    debugPrintError("Could not decode: " + err);
-    return;
+    return debugPrintError("Could not decode: " + err);
+  }
+
+  // Verify signing key belongs to claimed account
+  if(!utils.verifySignature(cert.key.sign.pub, formatPeerString(from, cert.fromAccount), cert.signature)) {
+    return debugPrintError("Failed to verify signature on certificate");
   }
 
   // Check if key already exists to be updated
@@ -841,6 +852,7 @@ function certificateMessageHandler(cert) {
 
       existingCert.lastExpiration = cert.expiration;
       existingCert.groups = cert.groups;
+      existingCert.socialMedia = cert.socialMedia;
       existingCert.save(function(err, savedCert) {
         if(err) {
           return console.error(err);
@@ -902,7 +914,7 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
       self._subscribedTo[topic]++;
       return resolve(true);
     } else {
-      self.ipfsNode.pubsub.subscribe(topic, subscribeMessageHandler, {discover: true}, err => {
+      self.ipfsNode.pubsub.subscribe(topic, messageHandler, {discover: true}, err => {
         if(err) {
           throw new Error('Failed to subscribe to: ' + topic + ' : ' + err);
         }
@@ -917,7 +929,7 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
     if(self._subscribedTo[topicCerts] > 0) {
       return self._subscribedTo[topicCerts]++;
     } else {
-      self.ipfsNode.pubsub.subscribe(topicCerts, certificateMessageHandler, {discover: true}, err => {
+      self.ipfsNode.pubsub.subscribe(topicCerts, certificateHandler, {discover: true}, err => {
         if(err) {
           throw new Error('Failed to subscribe to: ' + topicCerts + ' : ' + err);
         }
@@ -948,7 +960,7 @@ distort_ipfs.unsubscribe = function(name, subgroupIndex) {
     }
 
     // Only one account relies on channel, can unsubscribe
-    self.ipfsNode.pubsub.unsubscribe(topic, subscribeMessageHandler, err => {
+    self.ipfsNode.pubsub.unsubscribe(topic, messageHandler, err => {
       if(err) {
         throw new Error('Failed to unsubscribe from: ' + topic, err);
       }
@@ -964,7 +976,7 @@ distort_ipfs.unsubscribe = function(name, subgroupIndex) {
       return;
     }
 
-    self.ipfsNode.pubsub.unsubscribe(topicCerts, certificateMessageHandler, err => {
+    self.ipfsNode.pubsub.unsubscribe(topicCerts, certificateHandler, err => {
       if(err) {
         throw new Error('Failed to unsubscribe from: ' + topicCerts, err);
       }
