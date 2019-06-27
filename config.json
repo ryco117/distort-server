@@ -3,7 +3,7 @@
   "ipfsNode": {
     "address": "ipfs",
     "bootstrap": [
-      "/ip4/34.66.232.169/tcp/4001/ipfs/QmWV77RTC7cwMPbPBfCbP68JGPt5ta8qPyiCWsUNZsXvpo",
+      "/dns4/ipfs.bootstrap.distort.network/tcp/4001/ipfs/QmWV77RTC7cwMPbPBfCbP68JGPt5ta8qPyiCWsUNZsXvpo",
       "/dns4/rypi.unix4all.com/tcp/4001/ipfs/QmemJHsMDuBjUCAyiWeVdct2LGHqtZhu8QQCt8ZQVbY1qz"
     ],
     "port": 5001
