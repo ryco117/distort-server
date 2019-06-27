@@ -4,7 +4,7 @@
     "address": "ipfs",
     "bootstrap": [
       "/ip4/34.66.232.169/tcp/4001/ipfs/QmWV77RTC7cwMPbPBfCbP68JGPt5ta8qPyiCWsUNZsXvpo",
-      "/dns4/rypi.unix4all.com/tcp/4001/ipfs/QmemJHsMDuBjUCAyiWeVdct2LGHqtZhu8QQCt8ZQVbY1qz"
+      "/ip4/192.168.1.14/tcp/4001/ipfs/QmemJHsMDuBjUCAyiWeVdct2LGHqtZhu8QQCt8ZQVbY1qz"
     ],
     "port": 5001
   },
@@ -13,7 +13,7 @@
   "port": 6945,
   "protocolVersion": "0.1.0",
   "socialMedia": {
-    "link": true,
-    "stream": true
+    "link": false,
+    "stream": false
   }
 }
