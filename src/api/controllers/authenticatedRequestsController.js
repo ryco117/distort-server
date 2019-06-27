@@ -910,7 +910,7 @@ exports.getDistortIdentity = function(req, res) {
       const fullAddress = formatPeerString(link.cert.peerId, link.cert.accountName);
       debugPrint(platform+':'+handle + ' <-> ' + fullAddress);
 
-      return sendMessageJSON(res, fullAddress);
+      return res.json({peerId: link.cert.peerId, accountName: link.cert.accountName});
     } else {
       return sendErrorJSON(res, 'No validating distort account was found', 404);
     }
@@ -935,14 +935,21 @@ exports.setIdentity = function(req, res) {
     }
 
     const socialMedia = account.cert.socialMedia;
+    const _removeAllForPlatform = platform => {
+
+      // Should should never be more than one link per social mediathe loop
+      // since its very little extra cost but ensures consistency
+      for(var i = socialMedia.length-1; i >= 0; i--) {
+        if(platform === socialMedia[i].platform) {
+          socialMedia.splice(i, 1);
+        }
+      }
+    }
+
     switch(req.body.platform) {
       case 'twitter':
         // Remove existing Twitter entries so they may be updated (or removed if specified as empty)
-        for(var i = socialMedia.length-1; i >= 0; i--) {
-          if('twitter' === socialMedia[i].platform) {
-            socialMedia.splice(i, 1);
-          }
-        }
+        _removeAllForPlatform('twitter');
 
         if(req.body.handle && req.body.key) {
           const twitter = {platform: 'twitter', handle: req.body.handle};
@@ -971,16 +978,17 @@ exports.setIdentity = function(req, res) {
           socialMedia.push(twitter);
           distort_ipfs.streamTwitter();
         }
-
-        return Cert.findOneAndUpdate({'_id': account.cert._id}, {'$set': {'socialMedia': socialMedia}}, (err,cert) => {
-          if(err) {
-            sendErrorJSON(res, err, 500);
-          } else {
-            sendMessageJSON(res, 'Updated Twitter identity');
-          }
-        });
+        break;
       default:
         return sendErrorJSON(res, 'No implementation for social-media platform "' + req.body.platform + '"', 400);
+
+      return Cert.findOneAndUpdate({'_id': account.cert._id}, {'$set': {'socialMedia': socialMedia}}, (err,cert) => {
+        if(err) {
+          sendErrorJSON(res, err, 500);
+        } else {
+          sendMessageJSON(res, 'Updated Twitter identity');
+        }
+      });
     }
   });
 }

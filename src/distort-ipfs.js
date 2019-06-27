@@ -213,14 +213,15 @@ distort_ipfs.initIpfs = function() {
                   andTheyStillFeelOhSoWastedOnMyself.push(Group.find({owner: account._id}));
                 }
                 return Promise.all(andTheyStillFeelOhSoWastedOnMyself).then(function(groupsArrays) {
-                    for(var i = 0; i < groupsArrays.length; i++) {
-                      for(var j = 0; j < groupsArrays[i].length; j++) {
-                        self.subscribe(groupsArrays[i][j].name, groupsArrays[i][j].subgroupIndex);
-                      }
-                    }
-                    return resolve2(true);
+                  groupsArrays.reduce((accA, groups) => {
+                    const gs = groups;
+                    return accA.then(() => {return gs.reduce((accB, group) => {
+                      const g = group;
+                      return accB.then(() => self.subscribe(g.name, g.subgroupIndex));
+                    }, Promise.resolve())});
+                  }, Promise.resolve()).then(() => resolve2(true));
                 }).catch(err => {
-                    return reject2('Could not search database: ' + err);
+                  return reject2('Could not search database: ' + err);
                 });
               }
             }).then(() => {
@@ -550,7 +551,7 @@ distort_ipfs.streamTwitter = function() {
   const self = this;
 
   // Don't recreate stream if exists
-  if(self._twitter_stream) {
+  if(self._twitter_stream && self._twitter_stream !== {}) {
     return Promise.resolve();
   }
 
@@ -595,8 +596,10 @@ distort_ipfs.streamTwitter = function() {
       strictSSL: true   // opt
     });
 
-    const linkExp = new RegExp("^#distort_id(\\s[a-zA-Z_.,!\\s-]*)?\\s([1-9A-HJ-NP-Za-km-z]+)(:[^\\s]+)?\\s,\\sSignature\\s([a-zA-Z0-9+/=]+)$", "g");
+    const linkExp = new RegExp("^#distort_id(\\s[.*]*)?\\s([1-9A-HJ-NP-Za-km-z]+)(:[^\\s]+)?\\s,\\sSignature\\s([a-zA-Z0-9+/=]+)$", "g");
     self._twitter_stream = T.stream('statuses/filter', {track: '#distort_id'});
+    debugPrint('Streaming Twitter #distort_id');
+
     self._twitter_stream.on('tweet', function(tweet) {
       // Received a tweet on #distort_id
       const handle = tweet.user.screen_name;
@@ -675,7 +678,7 @@ function messageHandler(msg) {
     .where('lastExpiration').gt(Date.now())
     .exec(function(err, peerCert) {
     if(err) {
-      throw new Error(err);
+      throw console.error(err);
     }
 
     // Verify signatures on messages. This allows for the possibility of
@@ -683,14 +686,23 @@ function messageHandler(msg) {
     const verifiedSig = peerCert && msg.cipher && msg.signature &&
       utils.verifySignature(peerCert.key.sign.pub, msg.cipher, msg.signature);
 
+    // Find group this message was received over
+    const groupPattern = /^(.*)-(all|\d+)$/;
+    if(!groupPattern.test(fromGroup)) {
+      throw console.error("Received message on improper group: " + fromGroup);
+    }
+    const groupName = groupPattern.exec(fromGroup)[1];
+    const groupIndex = groupPattern.exec(fromGroup)[2];
+    groupIndex = (groupIndex==='all') ? 0 : parseInt(groupIndex);
+
     // Find all our certs that match the current IPFS node that have not expired
-    // and attempt to decrypt with them
+    // and attempt to decrypt with them and are members of the group received over
     Cert
-      .find({peerId: distort_ipfs.peerId})
+      .find({peerId: distort_ipfs.peerId, groups: {'$regex': groupName+':'+groupIndex}})
       .where('lastExpiration').gt(Date.now())
       .exec(function(err, certs) {
       if(err) {
-        throw new Error(err);
+        throw console.error(err);
       }
 
       // Get public key for elGamal
@@ -729,15 +741,6 @@ function messageHandler(msg) {
 
       // Received message!
       console.log('Received message: ' + plaintext);
-
-      // Find group to save message to
-      var groupPattern = /^(.*)-(all|\d+)$/;
-      if(!groupPattern.test(fromGroup)) {
-        throw console.error("Received message on improper group: " + fromGroup);
-      }
-      var groupName = groupPattern.exec(fromGroup)[1];
-      var groupIndex = groupPattern.exec(fromGroup)[2];
-      groupIndex = (groupIndex==="all") ? 0 : parseInt(groupIndex);
 
       // Determine which group message was received on
       Group.aggregate([
@@ -816,7 +819,7 @@ function messageHandler(msg) {
 
 function certificateHandler(cert) {
   debugPrint('Received certificate: ' + cert.data);
-  debugPrint('Certificate from: ' + cert.from);
+  debugPrint('Certificate from IPFS node: ' + cert.from);
 
   const from = cert.from;
   try {
@@ -911,32 +914,29 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
   return new Promise((resolve, reject) => {
     // Remeber number of accounts requiring this channel
     if(self._subscribedTo[topic] > 0) {
-      self._subscribedTo[topic]++;
-      return resolve(true);
+      return resolve(++(self._subscribedTo[topic]));
     } else {
-      self.ipfsNode.pubsub.subscribe(topic, messageHandler, {discover: true}, err => {
-        if(err) {
-          throw new Error('Failed to subscribe to: ' + topic + ' : ' + err);
-        }
+      return self.ipfsNode.pubsub.subscribe(topic, messageHandler, {discover: true}).then(() => {
         debugPrint('Now subscribed to: ' + topic);
 
         self._subscribedTo[topic] = 1;
-        return resolve(true);
+        return resolve(1);
+      }).catch(err => {
+        reject(new Error('Failed to subscribe to: ' + topic + ' : ' + err));
       });
     }
   }).then(() => {
     // Remeber number of accounts requiring this channel
     if(self._subscribedTo[topicCerts] > 0) {
-      return self._subscribedTo[topicCerts]++;
+      return ++(self._subscribedTo[topicCerts]);
     } else {
-      self.ipfsNode.pubsub.subscribe(topicCerts, certificateHandler, {discover: true}, err => {
-        if(err) {
-          throw new Error('Failed to subscribe to: ' + topicCerts + ' : ' + err);
-        }
+      return self.ipfsNode.pubsub.subscribe(topicCerts, certificateHandler, {discover: true}).then(() => {
         debugPrint('Now subscribed to: ' + topicCerts);
 
         self._subscribedTo[topicCerts] = 1;
-        return;
+        return 1;
+      }).catch(err => {
+        throw new Error('Failed to subscribe to: ' + topicCerts + ' : ' + err);
       });
     }
   }).catch(err => {
