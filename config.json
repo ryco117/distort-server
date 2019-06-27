@@ -4,7 +4,7 @@
     "address": "ipfs",
     "bootstrap": [
       "/dns4/ipfs.bootstrap.distort.network/tcp/4001/ipfs/QmWV77RTC7cwMPbPBfCbP68JGPt5ta8qPyiCWsUNZsXvpo",
-      "/ip4/192.168.1.14/tcp/4001/ipfs/QmemJHsMDuBjUCAyiWeVdct2LGHqtZhu8QQCt8ZQVbY1qz"
+      "/dns4/rypi.unix4all.com/tcp/4001/ipfs/QmemJHsMDuBjUCAyiWeVdct2LGHqtZhu8QQCt8ZQVbY1qz"
     ],
     "port": 5001
   },
