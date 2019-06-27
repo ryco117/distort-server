@@ -3,7 +3,7 @@
   "ipfsNode": {
     "address": "ipfs",
     "bootstrap": [
-      "/ip4/34.66.232.169/tcp/4001/ipfs/QmWV77RTC7cwMPbPBfCbP68JGPt5ta8qPyiCWsUNZsXvpo",
+      "/dns4/ipfs.bootstrap.distort.network/tcp/4001/ipfs/QmWV77RTC7cwMPbPBfCbP68JGPt5ta8qPyiCWsUNZsXvpo",
       "/ip4/192.168.1.14/tcp/4001/ipfs/QmemJHsMDuBjUCAyiWeVdct2LGHqtZhu8QQCt8ZQVbY1qz"
     ],
     "port": 5001
@@ -11,9 +11,5 @@
   "maxRead": 25,
   "mongoAddress": "mongodb://mongo:27017/distort",
   "port": 6945,
-  "protocolVersion": "0.1.0",
-  "socialMedia": {
-    "link": false,
-    "stream": false
-  }
+  "protocolVersion": "0.1.0"
 }
