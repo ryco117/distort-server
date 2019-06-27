@@ -226,7 +226,7 @@ distort_ipfs.initIpfs = function() {
             }).then(() => {
               // Setup routines to run
               self.msgIntervalId = setInterval(() => self._dequeueMsg(), 5 * SECONDS_PER_MINUTE * MS_PER_SECOND);
-              self.certIntervalId = setInterval(() => self._publishCert(), 30 * SECONDS_PER_MINUTE * MS_PER_SECOND);
+              self.certIntervalId = setInterval(() => self._publishCert(), MINUTES_PER_HOUR * SECONDS_PER_MINUTE * MS_PER_SECOND);
 
               // Always publish certificate on start
               self._publishCert();
@@ -326,6 +326,7 @@ distort_ipfs._dequeueMsg = function () {
   bootstrapPromise.then(() => {
     Account
     .find({peerId: self.peerId, enabled: true})
+    .where('activeGroup').exists()
     .populate('cert')
     .populate('activeGroup')
     .exec(function(err, accounts) {
@@ -333,12 +334,11 @@ distort_ipfs._dequeueMsg = function () {
         return console.error(err);
       }
 
-      for(var i = 0; i < accounts.length; i++) {
-        const account = accounts[i];
+      if(accounts.length > 0) {
+        // Select a random account to use for dequeue
+        // This is to reduce network congestion and make being dropped as a peer less likely
+        var account = accounts[Math.floor(accounts.length * Math.random())];
         const group = account.activeGroup;
-        if(!group) {
-          continue;
-        }
 
         OutMessage.aggregate([
         {
