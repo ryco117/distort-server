@@ -26,6 +26,7 @@ These technical docs are meant for homeserver administrators to be able to prope
         * [/account](#account)
         * [/peers](#peers)
         * [/signatures](#signatures)
+        * [/social-media](#social-media)
 
 ## Server Overview
 ### Configuration
@@ -40,6 +41,11 @@ The server is configurable by the top-level JSON file `config.json`. It features
 * `mongoAddress`: string; the string to use to connect to the MongoDB to use. Eg., "mongodb://mongo:27017/distort"
 * `port`: positive integer; the local port to open for REST API calls
 * `protocolVersion`: string; the version string of the protocol this server will implement. Eg., "0.1.0"
+* `socialMedia`: object; toggles participation parameters for the social-media protocol extensions
+    * `link`: boolean; iff is truthy, every account with configured social media account will routinely post 
+    over social-media that link the posting account to their distort ID
+    * `stream`: boolean; iff is truthy, listen for posts linking social-media accounts to distort IDs. Will
+    select social-media platform credentials from available accounts using the platform
 
 ### Launch Actions
 1. Connect to the configured MongoDB to use for node storage. Retry every 5 seconds until successful connection
@@ -56,6 +62,7 @@ so that trust of IPFS identities implies trust of the certificates they publish
         The PBKDF2 hash of this password is used as the authentication token. It is not stored in the database. 
         The SHA256 hash of this token is stored in the database for later comparison when REST API calls are made using said token. 
         Finally, create a new certificate and save the newly created account and certificate details to the database
+    1. (Optional) Begin to stream on supported social-media platforms that any host account belongs to
     1. Initialize REST paths and launch server on configured port
     
 ### Runtime Actions
@@ -71,12 +78,19 @@ real and fake messages are of equal size, then broadcast on all channels on the 
 * **Receive Messages** - Ensure message was published with a supported protocol version. Attempt to decrypt the message with all non-expired keys that match the IPFS identity is use. 
 If there is a local account whose certificate decrypts the message, store the message under a conversation uniquely identified by the local account, peer account, and group over which the message was sent
 <a name="renew-certificates"></a>
-* **Renew Certificates** - Every thirty minutes, for every enabled account with this IPFS identity, update its certificate's expiry date to be two weeks from the current time. Then, for each of those account, publish the 
+* **Renew Certificates** - Every hour, for every enabled account with this IPFS identity, update its certificate's expiry date to be two weeks from the current time. Then, for each of those account, publish the 
 certificate over its active group's certificate channel. If the account does not have an active group, its certificate will not be broadcast. Each certificate broadcast contains a public encryption key, 
 a public signing key (not used), the new expiration, and the group nodes the account is currently subscribed to (of which the active account is an element of)
 <a name="receive-certificates"></a>
 * **Receive Certificates** - Ensure certificate was published with a supported protocol version. If the certificate's public keys are stored locally update the certificate's expiry date and groups. If the certificate is new, 
 invalidate any other certificates this peer has published and save the new one
+<a name="social-media-linking"></a>
+* **Social Media Linking** - Optionally, every hour, post signatures over social media on behalf of participating host accounts
+which link the posting social-media account to the respective distort ID the account belongs to
+<a name="social-media-stream"></a>
+* **Social Media Stream** - Optionally, maintain a stream on every social-media platform that at least one host account belongs to. 
+The stream parses for signatures linking the posting social-media identity to a distort identity. The resulting link is saved locally 
+so that it may be used to add distort peers by their social-media identities alone
 
 ## REST API
 
@@ -86,22 +100,28 @@ invalidate any other certificates this peer has published and save the new one
     - This response code is returned if and only if the request was performed without error
 <a name="400"></a>
 * **400** - Bad Request
-    - The client failed to specify required fields
-    - ... fields were incorrectly formatted
-    - ... gave incorrect parameters for the specified action/request
+    - Required fields were missing
+    - Fields were incorrectly formatted
+    - Gave incorrect parameters for the specified action/request. This can include errors such as
+    leaving a group one does not belong to
 <a name="401"></a>
 * **401** - Unauthorized
-    - The client gave an incorrect authentication token
+    - Gave an incorrect authentication token
+    - Gave an incorrect account-creation signature
 <a name="403"></a>
 * **403** - Forbidden
-    - The client attempted to view/modify an account it cannot access
-    - ... attempted to authorize as an IPFS identity different from that of the connected IPFS node. This is to ensure client knows their broadcasting identity
-    - ... attempted to disable the root account
+    - Attempted to view/modify an account it cannot access
+    - Attempted to authorize as an IPFS identity different from that of the connected IPFS node. This is to ensure client knows their broadcasting identity
+    - Attempted to disable the root account
+    - Attempted to remove an account as a non-root user
 <a name="404"></a>
 * **404** - Not Found
-    - The client attempted to access a resource that does not exist
-    - This can range from deleting a group that does not exist to updating an account which does not exist
-    - Enqueuing messages to a peer for whom there is no local certificate will return `404` since the required resource does not yet locally stored
+    - Attempted to enqueue a message to a peer for whom there is no local certificate
+    - Attempted to add peer for whom there is no local certificate
+    - Attempted to remove a peer for whom there is no local entry
+    - Attempted to update or delete a non-existent local account
+    - No DistoRt ID was found linked to the requested social-media identity
+    - Attempted to verify signature of peer for whom there is no local certificate
 <a name="500"></a>
 * **500** - Internal Server Error
     - An internal server error occurred and caused the request to be abandoned prematurely
@@ -252,3 +272,20 @@ Request paths:
 	        - `plaintext`: string; the text to verify was signed by the specified peer
 	        - `signature`: string; the signature to verify
 	    - Return: server-message object; message `true` if the signature is verified, `false` otherwise
+<a name="social-media"></a>
+* **/social-media**
+    * **GET** - Fetch DistoRt ID
+        - Query parameters:
+	        - `platform`: string; the social-media platform the identity to retrieve belongs to
+	        - `handle`: string; the username/handle on the given social-media platform for the identity to retrieve
+	    - Return: peer object; if a link is found, return the DistoRt identity associated with the specified identity
+    * **PUT** - Link DistoRt ID
+        - Body parameters:
+	        - `platform`: string; the social-media platform the identity to set belongs to
+	        - `handle`: string; the username/handle on the given social-media platform for the identity to set
+	        - (Optional) `key`: string; the text to verify was signed by the given peer.
+	        If field is empty or not specified, any social-media link the authenticating account has for the given platform is removed
+	    - Action: adds link between the specified social-media identity and the authenticating account. If a link
+	    already exists for the specified social-media platform and the authenticating account, then the previous link
+	    is replaced
+	    - Return: server-message object; message informing of success of operation

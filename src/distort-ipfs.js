@@ -596,7 +596,7 @@ distort_ipfs.streamTwitter = function() {
       strictSSL: true   // opt
     });
 
-    const linkExp = new RegExp("^#distort_id(\\s[.*]*)?\\s([1-9A-HJ-NP-Za-km-z]+)(:[^\\s]+)?\\s,\\sSignature\\s([a-zA-Z0-9+/=]+)$", "g");
+    const linkExp = new RegExp("^#distort_id(\\s.*)?\\s([1-9A-HJ-NP-Za-km-z]+)(:[^\\s]+)?\\s,\\sSignature\\s([a-zA-Z0-9+/=]+)$", "g");
     self._twitter_stream = T.stream('statuses/filter', {track: '#distort_id'});
     debugPrint('Streaming Twitter #distort_id');
 

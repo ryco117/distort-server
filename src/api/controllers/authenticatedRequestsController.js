@@ -304,7 +304,7 @@ exports.postMessage = function(req, res) {
 
     group = group[0];
     if(!group) {
-      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 404);
+      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 400);
     }
 
     // Must include one way to identify peer
@@ -453,7 +453,7 @@ exports.leaveGroup = function(req, res) {
 
     group = group[0];
     if(!group) {
-      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 404);
+      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 400);
     }
 
     Group.findByIdAndRemove(group._id, function(err, delStats) {
@@ -535,7 +535,7 @@ exports.readConversationMessagesInRange = function(req, res) {
 
     group = group[0];
     if(!group) {
-      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 404);
+      return sendErrorJSON(res, 'Account is not a member of group: ' + req.params.groupName, 400);
     }
 
     Conversation.findOne({group: group._id, peerId: req.query.peerId, accountName: req.query.accountName || 'root'}, function(err, conversation) {
@@ -698,7 +698,7 @@ exports.updateAccount = function(req, res) {
         }
       }).catch(err => {
         if(err === "GROUP_DOES_NOT_EXIST") {
-          throw {'err': 'Account does not belong to group ' + req.body.activeGroup, 'code': 404};
+          throw {'err': 'Account does not belong to group ' + req.body.activeGroup, 'code': 400};
         } else {
           throw {'err': err, 'code': 500};
         }
@@ -910,9 +910,9 @@ exports.getDistortIdentity = function(req, res) {
       const fullAddress = formatPeerString(link.cert.peerId, link.cert.accountName);
       debugPrint(platform+':'+handle + ' <-> ' + fullAddress);
 
-      return res.json({peerId: link.cert.peerId, accountName: link.cert.accountName});
+      return res.json({peerId: link.cert.peerId, accountName: link.cert.accountName, groups: link.cert.groups});
     } else {
-      return sendErrorJSON(res, 'No validating distort account was found', 404);
+      return sendErrorJSON(res, 'No link was found matching requested social-media identity', 404);
     }
   });
 }
@@ -922,7 +922,7 @@ exports.setIdentity = function(req, res) {
   const peerId = req.headers.peerid;
   const accountName = req.headers.accountname;
 
-  if(!req.body.platform) {
+  if(!req.body.platform || !req.body.handle) {
     return sendErrorJSON(res, 'Must specify social-media platform', 400);
   }
 
@@ -936,8 +936,7 @@ exports.setIdentity = function(req, res) {
 
     const socialMedia = account.cert.socialMedia;
     const _removeAllForPlatform = platform => {
-
-      // Should should never be more than one link per social mediathe loop
+      // Should never be more than one link per social mediathe loop
       // since its very little extra cost but ensures consistency
       for(var i = socialMedia.length-1; i >= 0; i--) {
         if(platform === socialMedia[i].platform) {
@@ -951,7 +950,7 @@ exports.setIdentity = function(req, res) {
         // Remove existing Twitter entries so they may be updated (or removed if specified as empty)
         _removeAllForPlatform('twitter');
 
-        if(req.body.handle && req.body.key) {
+        if(req.body.key) {
           const twitter = {platform: 'twitter', handle: req.body.handle};
           const twitterKey = {};
           try {
@@ -978,17 +977,15 @@ exports.setIdentity = function(req, res) {
           socialMedia.push(twitter);
           distort_ipfs.streamTwitter();
         }
-        break;
+        return Cert.findOneAndUpdate({'_id': account.cert._id}, {'$set': {'socialMedia': socialMedia}}, (err,cert) => {
+          if(err) {
+            sendErrorJSON(res, err, 500);
+          } else {
+            sendMessageJSON(res, 'Updated Twitter identity');
+          }
+        });
       default:
         return sendErrorJSON(res, 'No implementation for social-media platform "' + req.body.platform + '"', 400);
-
-      return Cert.findOneAndUpdate({'_id': account.cert._id}, {'$set': {'socialMedia': socialMedia}}, (err,cert) => {
-        if(err) {
-          sendErrorJSON(res, err, 500);
-        } else {
-          sendMessageJSON(res, 'Updated Twitter identity');
-        }
-      });
     }
   });
 }
