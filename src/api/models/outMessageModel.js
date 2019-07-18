@@ -35,4 +35,7 @@ var OutMessageSchema = new Schema({
 // For each conversation, their may only be a single message with any given index
 OutMessageSchema.index({conversation: 1, index: 1}, {unique: true});
 
+// Allow for the quick retrieval of all unsent messages
+OutMessageSchema.index({status: 1});
+
 module.exports = mongoose.model('OutMessages', OutMessageSchema)

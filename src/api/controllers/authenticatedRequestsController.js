@@ -600,6 +600,32 @@ exports.fetchAccount = function(req, res) {
   });
 };
 
+// Retrieve account information for all accounts
+exports.fetchAllAccounts = function(req, res) {
+  if(req.headers.accountname !== 'root') {
+    return sendErrorJSON(res, 'Not authorized to view accounts', 403);
+  }
+
+  Account
+    .find({})
+    .select('-_id accountName activeGroup enabled peerId')
+    .populate('activeGroup')
+    .exec(function(err, accts) {
+    if(err) {
+      return sendErrorJSON(res, err, 500);
+    }
+
+    for(var i = 0; i < accts.length; i++) {
+      accts[i] = accts[i].toObject();
+      if(!!accts[i].activeGroup) {
+        accts[i].activeGroup = accts[i].activeGroup.name;
+      }
+    }
+
+    res.json(accts);
+  });
+};
+
 // Update account settings
 exports.updateAccount = function(req, res) {
   req.body.accountName = req.body.accountName || req.headers.accountname;

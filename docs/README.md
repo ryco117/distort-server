@@ -24,6 +24,7 @@ These technical docs are meant for homeserver administrators to be able to prope
         * [/groups/:group-name](#groups-name)
         * [/groups/:group-name/:index-start/\[:index-end\]](#groups-name-index)
         * [/account](#account)
+        * [/accounts](#accounts)
         * [/peers](#peers)
         * [/signatures](#signatures)
         * [/social-media](#social-media)
@@ -58,8 +59,10 @@ so that trust of IPFS identities implies trust of the certificates they publish
         * *If so...* First, determine which local accounts are enabled and have the IPFS identity of the connected node. 
         For each account, subscribe the IPFS node to the pubsub channels they have added
         * *Otherwise...* Create a root account for the in-use IPFS identity. 
-        The default password mechanism is to generate a random 128-bit string and convert it to Base64. It is not stored in the database. 
-        The PBKDF2 hash of this password is used as the authentication token. It is not stored in the database. 
+        The administrator is prompted to enter their own password or allow for the creation of a random one.
+        The random password mechanism is to generate a 128-bit string and encode it in Base64. 
+        Neither generated nor user-entered passwords are stored in the database. 
+        The PBKDF2 hash of the password is used as the authentication token. It is not stored in the database. 
         The SHA256 hash of this token is stored in the database for later comparison when REST API calls are made using said token. 
         Finally, create a new certificate and save the newly created account and certificate details to the database
     1. (Optional) Begin to stream on supported social-media platforms that any host account belongs to
@@ -241,6 +244,10 @@ Request paths:
 	        - `accountName`: string; the name of the account to remove. Field is required
 	    - Action: removes the specified account as well as their conversations and groups
         - Return: server-message object; server-message containing a success string
+<a name="accounts"></a>
+* **/accounts**
+	* **GET** - Allow `root` to fetch all accounts
+	    - Return: array of account objects; details of all accounts stored on the homeserver
 <a name="peers"></a>
 * **/peers**
 	* **GET** - Fetch peers

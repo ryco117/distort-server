@@ -25,12 +25,17 @@ module.exports = function(app) {
     .put(distort.updateAccount)
     .delete(distort.deleteAccount);
 
+  // Special path for root to view accounts
+  app.route('/accounts')
+    .get(distort.fetchAllAccounts);
+
   // Manage peers
   app.route('/peers')
     .get(distort.fetchPeers)
     .post(distort.addPeer)
     .delete(distort.removePeer);
 
+  // Linking of distort and social-media identities
   app.route('/social-media')
     .get(distort.getDistortIdentity)
     .put(distort.setIdentity);
@@ -40,6 +45,7 @@ module.exports = function(app) {
     .get(distort.fetchQueue)
     .delete(distort.cancelMessage);*/
 
+  // Sign and verify signatures
   app.route('/signatures')
     .get(distort.signText)
     .post(distort.verifySignature);
