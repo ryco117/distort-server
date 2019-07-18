@@ -38,31 +38,26 @@ function updateActiveGroup(peerId, groupId, accountName) {
 }
 // Remove all conversations (and their respective messages) that match given filter
 function removeMatchingConversations(filter) {
-  return new Promise((resolve, reject) => {
-    Conversation.find(filter, function(err, conversations) {
-      for(var i = 0; i < conversations.length; i++) {
-        InMessage.find({conversation: conversations[i]._id}, (err, ins) => {
-          if(err) {
-            return reject(err);
-          }
-          for(var j = 0; j < ins.length; j++) {
-            ins[j].remove();
-          }
+  return Conversation.find(filter).then(conversations => {
+    const andTheyStillFeelOhSoWastedOnMyself = [];
+    for(var i = 0; i < conversations.length; i++) {
+      const conv = conversations[i];
+      const promise = InMessage.find({conversation: conv._id}).then(ins => {
+        for(var j = 0; j < ins.length; j++) {
+          ins[j].remove();
+        }
 
-          OutMessage.find({conversation: conversations[i]._id}, (err, outs) => {
-            if(err) {
-              return reject(err);
-            }
-            for(var j = 0; j < outs.length; j++) {
-              outs[j].remove();
-            }
+        return OutMessage.find({conversation: conv._id});
+      }).then(outs => {
+        for(var j = 0; j < outs.length; j++) {
+          outs[j].remove();
+        }
 
-            conversations[i].remove();
-            resolve(true);
-          });
-        });
-      }
-    });
+        conv.remove();
+      });
+      andTheyStillFeelOhSoWastedOnMyself.push(promise);
+    }
+    return Promise.all(andTheyStillFeelOhSoWastedOnMyself);
   });
 }
 
@@ -754,11 +749,11 @@ exports.deleteAccount = function(req, res) {
             sendMessageJSON(res, 'Successfully removed account: ' + req.body.accountName);
           });
         });
-      }).catch(err => {
-        if(err) {
-          return sendErrorJSON(res, err, 500);
-        }
       });
+    }).catch(err => {
+      if(err) {
+        return sendErrorJSON(res, err, 500);
+      }
     });
   });
 };

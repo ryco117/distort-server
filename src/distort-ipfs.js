@@ -3,6 +3,7 @@
 var ipfsAPI = require('ipfs-http-client'),
   mongoose = require('mongoose'),
   twit = require('twit'),
+  prompt = require('password-prompt'),
   sjcl = require('./sjcl'),
   config = require('./config'),
   utils = require('./utils'),
@@ -139,68 +140,81 @@ distort_ipfs.initIpfs = function() {
               return reject('Could not search database: ' + err);
             }
 
-            return new Promise((resolve2, reject2) => {
+            return new Promise((resolve, reject) => {
               if(accounts.length === 0) {
                 // Create a new account
                 let _hash = sjcl.hash.sha256.hash;
                 let _pbkdf2 = sjcl.misc.pbkdf2;
 
-                debugPrint('Creating new account for IPFS peer-ID: ' + self.peerId);
+                debugPrint('Creating new "root" account for IPFS peer-ID: ' + self.peerId);
 
                 // Password creation for new account
-                const autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
-                console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
-                const token = sjcl.codec.base64.fromBits(_pbkdf2(autoPassword, self.peerId, 1000));
-                console.log('REST Authentication Token: ' + token);
-                const tokenHash = sjcl.codec.base64.fromBits(_hash(token));
-                debugPrint('Token-hash: ' + tokenHash);
+                return prompt('Password (empty for random string): ', {method: 'choke'}).then(function(password) {
+                  if(!password) {
+                    const autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
+                    console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
+                    return autoPassword;
+                  } else {
+                    return prompt('Repeat password: ', {method: 'choke'}).then(function(passwordR) {
+                      if(password !== passwordR) {
+                        return reject(new Error('Passwords do not match, account creation aborted'));
+                      }
+                      return password;
+                    });
+                  }
+                }).then(function(password) {
+                  const token = sjcl.codec.base64.fromBits(_pbkdf2(password, self.peerId, 1000));
+                  console.log('REST Authentication Token: ' + token);
+                  const tokenHash = sjcl.codec.base64.fromBits(_hash(token));
+                  debugPrint('Token-hash: ' + tokenHash);
 
-                let _fromBits = sjcl.codec.hex.fromBits;
+                  let _fromBits = sjcl.codec.hex.fromBits;
 
-                // Create new private/public keypairs for account
-                var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
+                  // Create new private/public keypairs for account
+                  var e = sjcl.ecc.elGamal.generateKeys(secp256k1, PARANOIA);
 
-                // Get encryption strings
-                const encSec = _fromBits(e.sec.get());
-                const encPubCouple = e.pub.get();
-                const encPub = _fromBits(encPubCouple.x) + ":" + _fromBits(encPubCouple.y);
+                  // Get encryption strings
+                  const encSec = _fromBits(e.sec.get());
+                  const encPubCouple = e.pub.get();
+                  const encPub = _fromBits(encPubCouple.x) + ":" + _fromBits(encPubCouple.y);
 
-                // Get signing strings
-                var s = sjcl.ecc.ecdsa.generateKeys(secp256k1, PARANOIA);
-                const sigSec = _fromBits(s.sec.get());
-                const sigPubCouple = s.pub.get();
-                const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
+                  // Get signing strings
+                  var s = sjcl.ecc.ecdsa.generateKeys(secp256k1, PARANOIA);
+                  const sigSec = _fromBits(s.sec.get());
+                  const sigPubCouple = s.pub.get();
+                  const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
 
-                // New certificate's schema
-                var newCert = new Cert({
-                  key: {
-                    encrypt: {
-                      sec: encSec,
-                      pub: encPub
+                  // New certificate's schema
+                  var newCert = new Cert({
+                    key: {
+                      encrypt: {
+                        sec: encSec,
+                        pub: encPub
+                      },
+                      sign: {
+                        sec: sigSec,
+                        pub: sigPub
+                      }
                     },
-                    sign: {
-                      sec: sigSec,
-                      pub: sigPub
-                    }
-                  },
-                  lastExpiration: Date.now() + utils.CERT_LENGTH,
-                  peerId: self.peerId
-                });
-
-                // Save for reference
-                return newCert.save().then(function(cert) {
-                  // Create and save new account schema
-                  var newAccount = new Account({
-                    cert: cert._id,
-                    peerId: self.peerId,
-                    tokenHash: tokenHash
+                    lastExpiration: Date.now() + utils.CERT_LENGTH,
+                    peerId: self.peerId
                   });
-                  return newAccount.save();
-                }).then(function(acc) {
-                  debugPrint('Saved new account: ' + acc.peerId);
-                  return resolve2(true);
-                }).catch(err => {
-                  return reject2('Could not save to database: ' + err);
+
+                  // Save for reference
+                  return newCert.save().then(function(cert) {
+                    // Create and save new account schema
+                    var newAccount = new Account({
+                      cert: cert._id,
+                      peerId: self.peerId,
+                      tokenHash: tokenHash
+                    });
+                    return newAccount.save();
+                  }).then(function(acc) {
+                    debugPrint('Saved new account: ' + acc.peerId);
+                    return resolve(true);
+                  }).catch(err => {
+                    return reject('Could not save to database: ' + err);
+                  });
                 });
               } else {
                 var andTheyStillFeelOhSoWastedOnMyself = [];
@@ -219,9 +233,9 @@ distort_ipfs.initIpfs = function() {
                       const g = group;
                       return accB.then(() => self.subscribe(g.name, g.subgroupIndex));
                     }, Promise.resolve())});
-                  }, Promise.resolve()).then(() => resolve2(true));
+                  }, Promise.resolve()).then(() => resolve(true));
                 }).catch(err => {
-                  return reject2('Could not search database: ' + err);
+                  return reject('Could not search database: ' + err);
                 });
               }
             }).then(() => {
@@ -650,7 +664,8 @@ distort_ipfs.streamTwitter = function() {
 
 // Receive message logic
 function messageHandler(msg) {
-  debugPrint('Received message: ' + msg.data);
+  debugPrint('Received message on group: ' + msg.topicIDs);
+  debugPrint('Message contents: ' + msg.data);
   debugPrint('Message from IPFS node: ' + msg.from);
 
   if(!distort_ipfs.peerId) {
