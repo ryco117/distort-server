@@ -1,5 +1,9 @@
 {
   "debug": true,
+  "defaultGroup": {
+    "name": "パン",
+    "subgroupLevel": 0
+  },
   "ipfsNode": {
     "address": "ipfs",
     "bootstrap": [
@@ -11,5 +15,9 @@
   "maxRead": 25,
   "mongoAddress": "mongodb://mongo:27017/distort",
   "port": 6945,
-  "protocolVersion": "0.1.0"
+  "protocolVersion": "0.1.0",
+  "socialMedia": {
+    "link": true,
+    "stream": true
+  }
 }

@@ -20,6 +20,8 @@ exports.randomPath = function() {
 };
 
 exports.randomFromLevel = function(level) {
+  level = Math.abs(parseInt(level));
+  level = level < MAX_PATH_DEPTH ? level : MAX_PATH_DEPTH;
   var path = this.randomPath();
-  return path[Math.abs(parseInt(level))];
+  return path[level];
 };

@@ -203,12 +203,32 @@ distort_ipfs.initIpfs = function() {
                   // Save for reference
                   return newCert.save().then(function(cert) {
                     // Create and save new account schema
-                    var newAccount = new Account({
+                    const newAccount = new Account({
                       cert: cert._id,
                       peerId: self.peerId,
                       tokenHash: tokenHash
                     });
-                    return newAccount.save();
+                    return newAccount.save().then(acc => {
+                      const defaultGroup = config.defaultGroup;
+                      if(typeof defaultGroup === 'object' && defaultGroup.name && typeof defaultGroup.name === 'string') {
+                        var index = 0;
+                        if(typeof defaultGroup.subgroupLevel === 'number') {
+                          index = groupTree.randomFromLevel(defaultGroup.subgroupLevel);
+                        }
+
+                        const newGroup = new Group({
+                          name: defaultGroup.name,
+                          owner: acc._id,
+                          subgroupIndex: index
+                        });
+                        return newGroup.save().then(group => {
+                          acc.activeGroup = group._id;
+                          return acc.save();
+                        });
+                      } else {
+                        return acc;
+                      }
+                    });
                   }).then(function(acc) {
                     debugPrint('Saved new account: ' + acc.peerId);
                     return resolve(true);
@@ -246,7 +266,7 @@ distort_ipfs.initIpfs = function() {
               // Always publish certificate on start
               self._publishCert();
 
-              if(config.socialMedia) {
+              if(typeof config.socialMedia === 'object') {
                 // Read and save validated social media identities
                 if(config.socialMedia.stream) {
                   self.streamTwitter();
