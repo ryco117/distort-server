@@ -3,7 +3,7 @@
 var ipfsAPI = require('ipfs-http-client'),
   mongoose = require('mongoose'),
   twit = require('twit'),
-  prompt = require('password-prompt'),
+  prompt = require('read'),
   sjcl = require('./sjcl'),
   config = require('./config'),
   utils = require('./utils'),
@@ -129,7 +129,7 @@ distort_ipfs.initIpfs = function() {
         }
 
         // If bootstrapping, wait until finished before continuing
-        bootstrapPromise.then(() => {
+        return bootstrapPromise.then(() => {
           // Find accounts for current IPFS ID (or create new 'root' account if none exist) that are enabled. 'root' cannot be disabled
           Account
             .find({peerId: self.peerId, enabled: true})
@@ -149,19 +149,21 @@ distort_ipfs.initIpfs = function() {
                 debugPrint('Creating new "root" account for IPFS peer-ID: ' + self.peerId);
 
                 // Password creation for new account
-                return prompt('Password (empty for random string): ', {method: 'choke'}).then(function(password) {
-                  if(!password) {
-                    const autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
-                    console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
-                    return autoPassword;
-                  } else {
-                    return prompt('Repeat password: ', {method: 'choke'}).then(function(passwordR) {
-                      if(password !== passwordR) {
-                        return reject(new Error('Passwords do not match, account creation aborted'));
-                      }
-                      return password;
-                    });
-                  }
+                return new Promise((resolve, reject) => {
+                  prompt({prompt: 'Password (empty for random string): ', silent: true}, function(err, password) {
+                    if(!password) {
+                      const autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
+                      console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
+                      resolve(autoPassword);
+                    } else {
+                       prompt({prompt: 'Repeat password: ', silent: true}).then(function(err, passwordR) {
+                        if(password !== passwordR) {
+                          return reject(new Error('Passwords do not match, account creation aborted'));
+                        }
+                        resolve(password);
+                      });
+                    }
+                  });
                 }).then(function(password) {
                   const token = sjcl.codec.base64.fromBits(_pbkdf2(password, self.peerId, 1000));
                   console.log('REST Authentication Token: ' + token);
