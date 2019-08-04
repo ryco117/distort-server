@@ -33,11 +33,15 @@ These technical docs are meant for homeserver administrators to be able to prope
 ### Configuration
 The server is configurable by the top-level JSON file `config.json`. It features several configurables:
 * `debug`: boolean; print debug-level information to the console iff this key has a positive truthyness value
+* `defaultGroup`: object; subscribe to a default group on creation of any account
+    * `name`: string; the name of the group to join on creation
+    * `subgroupLevel`: non-negative integer; the default level of reduced traffic to receive
 * `ipfsNode`: object; information on the IPFS node to use for IPFS API and as the node's identity
     * `address`: string; IP or domain address of the IPFS node to use
     * `bootstrap`: array of strings; A list of [IPFS multiaddrs](https://github.com/ipfs/go-ipfs-addr) to connect to at server start, 
     to help bootstrap connectivity between DistoRt peers
     * `port`: positive integer; API port of the IPFS node to use
+* `manualRootPassword`: boolean; on creation of root account prompt for password iff this is set to true
 * `maxRead`: positive integer; the maximum number of conversation messages that can be returned by a single GET request
 * `mongoAddress`: string; the string to use to connect to the MongoDB to use. Eg., "mongodb://mongo:27017/distort"
 * `port`: positive integer; the local port to open for REST API calls

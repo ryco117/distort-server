@@ -4,6 +4,7 @@ var sjcl = require('../../sjcl'),
   distort_ipfs = require('../../distort-ipfs'),
   config = require('../../config'),
   utils = require('../../utils'),
+  groupTree = require('../../groupTree'),
   mongoose = require('mongoose'),
   Account = mongoose.model('Accounts'),
   Cert = mongoose.model('Certs');
@@ -73,6 +74,19 @@ exports.createAccount = function(req, res) {
       const sigPubCouple = s.pub.get();
       const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
 
+
+      // Create account
+      // ==============
+      const defaultGroup = config.defaultGroup;
+      var defaultGroupName;
+      var defaultIndex = 0;
+      if(typeof defaultGroup === 'object' && defaultGroup.name && typeof defaultGroup.name === 'string') {
+        defaultGroupName = defaultGroup.name;
+        if(typeof defaultGroup.subgroupLevel === 'number') {
+          defaultIndex = groupTree.randomFromLevel(defaultGroup.subgroupLevel);
+        }
+      }
+
       // New certificate's schema
       var newCert = new Cert({
         key: {
@@ -85,6 +99,7 @@ exports.createAccount = function(req, res) {
             pub: sigPub
           }
         },
+        groups: defaultGroupName ? [defaultGroupName + ':' + defaultIndex] : undefined,
         lastExpiration: Date.now() + utils.CERT_LENGTH,
         peerId: peerId,
         accountName: accountName
@@ -103,7 +118,21 @@ exports.createAccount = function(req, res) {
           accountName: accountName,
           tokenHash: tokenHash
         });
-        newAccount.save(function(err, acc) {
+        return newAccount.save().then(acc => {
+          if(defaultGroupName) {
+            const newGroup = new Group({
+              name: defaultGroupName,
+              owner: acc._id,
+              subgroupIndex: defaultIndex
+            });
+            return newGroup.save().then(group => {
+              acc.activeGroup = group._id;
+              return acc.save();
+            });
+          } else {
+            return acc;
+          }
+        }).then(acc => {
           if(err) {
             return sendErrorJSON(res, 'Could not save account: ' + err, 500);
           }

@@ -187,6 +187,19 @@ distort_ipfs.initIpfs = function() {
                   const sigPubCouple = s.pub.get();
                   const sigPub = _fromBits(sigPubCouple.x) + ":" + _fromBits(sigPubCouple.y)
 
+
+                  // Create account
+                  // ==============
+                  const defaultGroup = config.defaultGroup;
+                  var defaultGroupName;
+                  var defaultIndex = 0;
+                  if(typeof defaultGroup === 'object' && defaultGroup.name && typeof defaultGroup.name === 'string') {
+                    defaultGroupName = defaultGroup.name;
+                    if(typeof defaultGroup.subgroupLevel === 'number') {
+                      defaultIndex = groupTree.randomFromLevel(defaultGroup.subgroupLevel);
+                    }
+                  }
+
                   // New certificate's schema
                   var newCert = new Cert({
                     key: {
@@ -199,6 +212,7 @@ distort_ipfs.initIpfs = function() {
                         pub: sigPub
                       }
                     },
+                    groups: defaultGroupName ? [toGroupIndexCouple(defaultGroupName,defaultIndex)] : undefined,
                     lastExpiration: Date.now() + utils.CERT_LENGTH,
                     peerId: self.peerId
                   });
@@ -213,16 +227,11 @@ distort_ipfs.initIpfs = function() {
                     });
                     return newAccount.save().then(acc => {
                       const defaultGroup = config.defaultGroup;
-                      if(typeof defaultGroup === 'object' && defaultGroup.name && typeof defaultGroup.name === 'string') {
-                        var index = 0;
-                        if(typeof defaultGroup.subgroupLevel === 'number') {
-                          index = groupTree.randomFromLevel(defaultGroup.subgroupLevel);
-                        }
-
+                      if(defaultGroupName) {
                         const newGroup = new Group({
-                          name: defaultGroup.name,
+                          name: defaultGroupName,
                           owner: acc._id,
-                          subgroupIndex: index
+                          subgroupIndex: defaultIndex
                         });
                         return newGroup.save().then(group => {
                           acc.activeGroup = group._id;
