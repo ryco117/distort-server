@@ -234,6 +234,7 @@ distort_ipfs.initIpfs = function() {
                           subgroupIndex: defaultIndex
                         });
                         return newGroup.save().then(group => {
+                          self.subscribe(defaultGroupName, defaultIndex);
                           acc.activeGroup = group._id;
                           return acc.save();
                         });
