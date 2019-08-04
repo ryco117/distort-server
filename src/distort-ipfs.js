@@ -3,7 +3,7 @@
 var ipfsAPI = require('ipfs-http-client'),
   mongoose = require('mongoose'),
   twit = require('twit'),
-  prompt = require('read'),
+  prompt = require('readline-sync'),
   sjcl = require('./sjcl'),
   config = require('./config'),
   utils = require('./utils'),
@@ -150,20 +150,18 @@ distort_ipfs.initIpfs = function() {
 
                 // Password creation for new account
                 return new Promise((resolve, reject) => {
-                  prompt({prompt: 'Password (empty for random string): ', silent: true}, function(err, password) {
-                    if(!password) {
-                      const autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
-                      console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
-                      resolve(autoPassword);
-                    } else {
-                       prompt({prompt: 'Repeat password: ', silent: true}).then(function(err, passwordR) {
-                        if(password !== passwordR) {
-                          return reject(new Error('Passwords do not match, account creation aborted'));
-                        }
-                        resolve(password);
-                      });
+                  const password = prompt.question('Password (empty for random string): ', {hideEchoBack: true});
+                  if(!password) {
+                    const autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
+                    console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
+                    resolve(autoPassword);
+                  } else {
+                    const passwordR = prompt.question('Repeat password: ', {hideEchoBack: true});
+                    if(password !== passwordR) {
+                      return reject(new Error('Passwords do not match, account creation aborted'));
                     }
-                  });
+                    resolve(password);
+                  }
                 }).then(function(password) {
                   const token = sjcl.codec.base64.fromBits(_pbkdf2(password, self.peerId, 1000));
                   console.log('REST Authentication Token: ' + token);
