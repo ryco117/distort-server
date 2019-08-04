@@ -12,6 +12,7 @@
     ],
     "port": 5001
   },
+  "manualRootPassword": false,
   "maxRead": 25,
   "mongoAddress": "mongodb://mongo:27017/distort",
   "port": 6945,

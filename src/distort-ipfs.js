@@ -150,7 +150,10 @@ distort_ipfs.initIpfs = function() {
 
                 // Password creation for new account
                 return new Promise((resolve, reject) => {
-                  const password = prompt.question('Password (empty for random string): ', {hideEchoBack: true});
+                  var password = undefined;
+                  if(config.manualRootPassword) {
+                    password = prompt.question('Password (empty for random string): ', {hideEchoBack: true});
+                  }
                   if(!password) {
                     const autoPassword = sjcl.codec.base64.fromBits(sjcl.random.randomWords(4));
                     console.log('** PASSWORD. WRITE THIS DOWN FOR "root" SIGN-IN **: ' + autoPassword);
