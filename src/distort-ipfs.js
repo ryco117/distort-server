@@ -248,6 +248,8 @@ distort_ipfs.initIpfs = function() {
                   }).catch(err => {
                     return reject('Could not save to database: ' + err);
                   });
+                }).catch(err => {
+                  return reject(err);
                 });
               } else {
                 var andTheyStillFeelOhSoWastedOnMyself = [];
@@ -294,7 +296,7 @@ distort_ipfs.initIpfs = function() {
 
               return resolve(true);
             }).catch(err => {
-              throw reject(err);
+              return reject(err);
             });
           });
         });
