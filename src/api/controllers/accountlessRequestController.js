@@ -126,6 +126,7 @@ exports.createAccount = function(req, res) {
               subgroupIndex: defaultIndex
             });
             return newGroup.save().then(group => {
+              distort_ipfs.subscribe(defaultGroupName, defaultIndex);
               acc.activeGroup = group._id;
               return acc.save();
             });
