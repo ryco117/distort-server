@@ -19,5 +19,5 @@ More detailed documentation overviewing the servers function and the REST API ca
 
 ### Additional Comments
 * It is highly recommended to join anonymity group `パン` until there are enough large-scale anonymity groups that safe alternatives exist (which admittedly is a bit of a chicken-and-the-egg situation)
-* While the REST API calls offer no end-to-end encryption of their own between the client and server, one is highly recommended to create a reverse proxy in front of the server, using HTTPS with a 
-signed certificate. The certificates can be signed either by a recognized Certificate Authroity (eg., [Lets Encrypt](https://letsencrypt.org/)) or be self-signed on the condition that the client trusts the signing certificate.
+* While the REST API calls offer no end-to-end encryption of their own between the client and server, it is highly recommended to create a reverse proxy in front of the server, using HTTPS with a 
+signed certificate. The certificates can be signed either by a recognized Certificate Authroity (eg., [Lets Encrypt](https://letsencrypt.org/)) or be self-signed. If self-signing, ensure that the client trusts the certificate.
