@@ -40,11 +40,6 @@ module.exports = function(app) {
     .get(distort.getDistortIdentity)
     .put(distort.setIdentity);
 
-  // TODO: Manage queue
-  /*app.route('/queue')
-    .get(distort.fetchQueue)
-    .delete(distort.cancelMessage);*/
-
   // Sign and verify signatures
   app.route('/signatures')
     .get(distort.signText)

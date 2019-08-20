@@ -7,7 +7,8 @@ var sjcl = require('../../sjcl'),
   groupTree = require('../../groupTree'),
   mongoose = require('mongoose'),
   Account = mongoose.model('Accounts'),
-  Cert = mongoose.model('Certs');
+  Cert = mongoose.model('Certs'),
+  Group = mongoose.model('Groups');
 
 const debugPrint = utils.debugPrint;
 const sendErrorJSON = utils.sendErrorJSON;

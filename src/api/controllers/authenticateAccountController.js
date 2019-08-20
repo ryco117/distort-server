@@ -52,6 +52,8 @@ exports.authenticate = function(req, res, next) {
     const calcHash = _fromBits(_hash(authtoken));
 
     if(calcHash !== account.tokenHash) {
+      debugPrint('Expected hash: ' + account.tokenHash + ' received hash: ' + calcHash);
+
       return sendErrorJSON(res, 'Could not authenticate user as peer: ' + formatPeerString(peerId, accountName), 401);
     }
 
