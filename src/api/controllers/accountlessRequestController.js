@@ -140,7 +140,9 @@ exports.createAccount = function(req, res) {
           }
 
           debugPrint('Saved new account: ' + utils.formatPeerString(peerId, accountName));
-          acc.cert = undefined;
+          delete acc.cert;
+          delete acc._id;
+          delete acc.__v;
           return res.json(acc);
         });
       });

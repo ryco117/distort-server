@@ -543,9 +543,9 @@ exports.readConversationMessagesInRange = function(req, res) {
       }
 
       const indexStart = parseInt(req.params.indexStart);
-      const indexEnd = req.params.indexEnd ? parseInt(req.params.indexEnd) : conversation.height-1;
-      if(indexEnd - indexStart > config.maxRead) {
-        indexStart = indexEnd - config.maxRead;
+      let indexEnd = req.params.indexEnd ? parseInt(req.params.indexEnd) : conversation.height-1;
+      if(indexEnd - indexStart + 1 > config.maxRead) {
+        indexEnd = indexStart + config.maxRead - 1;
       }
 
       InMessage

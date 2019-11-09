@@ -149,7 +149,7 @@ so that it may be used to add distort peers by their social-media identities alo
     - `error`: string; error message. Every response with a status code other than `200` will contain an error object
 * **Group Object**
     - `name`: string; the name of the distort group
-    - `subgroup`: non negative integer; the index of the node within the group tree that the account belongs to
+    - `subgroupIndex`: non negative integer; the index of the node within the group tree that the account belongs to
 * **Message Object**
     - (Received message only,Not implemented always false) `verified`: boolean; true iff the server has verified that the message was signed with the message sender's certificate
     - (Sent message only) `status`: exactly one of strings `enqueued`,`cancelled`,`sent`; 
@@ -181,7 +181,8 @@ Request paths:
             - `peerId`: string; the IPFS identity to create the account for. "root" account for this identitity must sign `accounName`
             - `accountName`: string; the name to assign to the new account
             - `authToken`: string; the string token that will be used to authorize account operations. Recommended to be a password hash using PBKDF2 parameter with SHA256 and 1000, then encode with base64
-            - `signature`: string; the hexadecimal signature string created by the "root" account of the specified IPFS identity. This token allows for the creation of an account with the signed account name
+            - `signature`: string; the base64 encoded signature string created by the "root" account of the specified peer identity. This token allows for the creation of an account with the signed account name. 
+              The signed text to verify is the string `create-account://` appended by the account name
         - Action: creates an account with the specified properties and generates a new key pair. Does not subscribe to any groups
         - Return: account object; details of the newly created account
         
@@ -228,7 +229,7 @@ Request paths:
             * `peerId`: string; the IPFS node ID of the peer being conversed with in group `group-name`
             * (Optional) `accountName`: string; the account name of the peer being conversed with. Defaults to `root`
 	    - Return: JSON object containing two fields, `in` and `out`; two arrays containing received and sent message objects respectively.
-	    If the requested number of messages is greater than the homeserver's configured `maxRead` parameter, then the last `maxRead` messages are returned
+	    If the requested number of messages is greater than the homeserver's configured `maxRead` parameter, then the first `maxRead` messages are returned
 <a name="account"></a>
 * **/account**
 	* **GET** - Fetch account
@@ -282,6 +283,7 @@ Request paths:
 	        - `accountName`: string; the account of the signing peer
 	        - `plaintext`: string; the text to verify was signed by the specified peer
 	        - `signature`: string; the signature to verify
+	          *Note: prepending a plaintext with `create-account://` will allow for creation of an account named by the rest of the plaintext*
 	    - Return: server-message object; message `true` if the signature is verified, `false` otherwise
 <a name="social-media"></a>
 * **/social-media**
