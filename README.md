@@ -8,7 +8,7 @@ A privately managed IPFS node must be exposed to the homeserver for pushing and 
 
 ### Build
 ##### Docker Build
-Run `make && docker-compose up` to launch containers for a private Mongo database, contained IPFS node, and the distort homeserver (exposing the configured port; default is 6945).
+Run `docker-compose up` to launch containers for a private Mongo database, contained IPFS node, and the distort homeserver (exposing the configured port; default is 6945).
 
 ##### Host Build
 Can be easily built with `make && npm install` then launched with `npm start`. In this instance you are responsible for having a private Mongo database and IPFS node that the homeserver can access.
