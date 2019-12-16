@@ -252,6 +252,7 @@ distort_ipfs.initIpfs = function() {
                   return reject(err);
                 });
               } else {
+                // Promises
                 var andTheyStillFeelOhSoWastedOnMyself = [];
 
                 // Account(s) for this IPFS node already exist
@@ -972,7 +973,7 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
         self._subscribedTo[topic] = 1;
         return resolve(1);
       }).catch(err => {
-        reject(new Error('Failed to subscribe to: ' + topic + ' : ' + err));
+        reject('Failed to subscribe to: ' + topic + ': ' + err);
       });
     }
   }).then(() => {
@@ -986,7 +987,7 @@ distort_ipfs.subscribe = function(name, subgroupIndex) {
         self._subscribedTo[topicCerts] = 1;
         return 1;
       }).catch(err => {
-        throw new Error('Failed to subscribe to: ' + topicCerts + ' : ' + err);
+        reject('Failed to subscribe to: ' + topicCerts + ': ' + err);
       });
     }
   }).catch(err => {
@@ -1012,7 +1013,7 @@ distort_ipfs.unsubscribe = function(name, subgroupIndex) {
     // Only one account relies on channel, can unsubscribe
     self.ipfsNode.pubsub.unsubscribe(topic, messageHandler, err => {
       if(err) {
-        throw new Error('Failed to unsubscribe from: ' + topic, err);
+        reject('Failed to unsubscribe from: ' + topic + ': ' + err);
       }
       debugPrint('Unsubscribed from: ' + topic);
       delete self._subscribedTo[topic];
@@ -1028,7 +1029,7 @@ distort_ipfs.unsubscribe = function(name, subgroupIndex) {
 
     self.ipfsNode.pubsub.unsubscribe(topicCerts, certificateHandler, err => {
       if(err) {
-        throw new Error('Failed to unsubscribe from: ' + topicCerts, err);
+        reject('Failed to unsubscribe from: ' + topic + ': ' + err);
       }
       debugPrint('Unsubscribed from: ' + topicCerts);
 
@@ -1043,7 +1044,7 @@ distort_ipfs.unsubscribe = function(name, subgroupIndex) {
 distort_ipfs.publish = function(topic, msg) {
   this.ipfsNode.pubsub.publish(topic, Buffer.from(msg), err => {
     if(err) {
-      throw new Error('Failed to publish to: ' + topic, err);
+      reject('Failed to publish to: ' + topic + ': ' + err);
     }
     debugPrint('Published to: ' + topic);
   });

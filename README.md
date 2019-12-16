@@ -3,7 +3,7 @@
 
 ### About
 A reference implementation homeserver for the research anonymity protocol [DistoRt](https://distortapp.org) (designed by [JS Légaré](https://github.com/init-js)), with message broadcasting performed over [IPFS](https://ipfs.io). 
-The homeserver is created with nodejs and stores its data to a MongoDB database. It can be interacted with remotely through REST API calls. 
+The homeserver is created with Node.js and stores its data to a MongoDB database. It can be interacted with remotely through REST API calls. 
 A privately managed IPFS node must be exposed to the homeserver for pushing and receiving messages.
 
 ### Build

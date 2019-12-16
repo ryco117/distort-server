@@ -32,21 +32,21 @@ These technical docs are meant for homeserver administrators to be able to prope
 ## Server Overview
 ### Configuration
 The server is configurable by the top-level JSON file `config.json`. It features several configurables:
-* `debug`: boolean; print debug-level information to the console iff this key has a positive truthyness value
-* `defaultGroup`: object; subscribe to a default group on creation of any account
-    * `name`: string; the name of the group to join on creation
-    * `subgroupLevel`: non-negative integer; the default level of reduced traffic to receive
+* `debug`: boolean; print debug-level information to the console iff this key has a positive truthyness value. Defaults to `false`
+* `defaultGroup`: object; iff present, will subscribe to the default group on creation of any account
+    * `name`: string; the name of the group to join
+    * `subgroupLevel`: non-negative integer; the level of reduced traffic to receive. defaults to `0`
 * `ipfsNode`: object; information on the IPFS node to use for IPFS API and as the node's identity
     * `address`: string; IP or domain address of the IPFS node to use
     * `bootstrap`: array of strings; A list of [IPFS multiaddrs](https://github.com/ipfs/go-ipfs-addr) to connect to at server start, 
     to help bootstrap connectivity between DistoRt peers
     * `port`: positive integer; API port of the IPFS node to use
 * `manualRootPassword`: boolean; on creation of root account prompt for password iff this is set to true
-* `maxRead`: positive integer; the maximum number of conversation messages that can be returned by a single GET request
+* `maxRead`: positive integer; the maximum number of conversation messages that can be returned by a single GET request. Defaults to `25`
 * `mongoAddress`: string; the string to use to connect to the MongoDB to use. Eg., "mongodb://mongo:27017/distort"
 * `port`: positive integer; the local port to open for REST API calls
 * `protocolVersion`: string; the version string of the protocol this server will implement. Eg., "0.1.0"
-* `socialMedia`: object; toggles participation parameters for the social-media protocol extensions
+* `socialMedia`: object; iff present toggles participation parameters for the social-media protocol extensions
     * `link`: boolean; iff is truthy, every account with configured social media account will routinely post 
     over social-media that link the posting account to their distort ID
     * `stream`: boolean; iff is truthy, listen for posts linking social-media accounts to distort IDs. Will

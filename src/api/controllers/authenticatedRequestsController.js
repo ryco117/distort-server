@@ -39,7 +39,9 @@ function updateActiveGroup(peerId, groupId, accountName) {
 // Remove all conversations (and their respective messages) that match given filter
 function removeMatchingConversations(filter) {
   return Conversation.find(filter).then(conversations => {
+    // Promises
     const andTheyStillFeelOhSoWastedOnMyself = [];
+
     for(var i = 0; i < conversations.length; i++) {
       const conv = conversations[i];
       const promise = InMessage.find({conversation: conv._id}).then(ins => {
@@ -544,8 +546,9 @@ exports.readConversationMessagesInRange = function(req, res) {
 
       const indexStart = parseInt(req.params.indexStart);
       let indexEnd = req.params.indexEnd ? parseInt(req.params.indexEnd) : conversation.height-1;
-      if(indexEnd - indexStart + 1 > config.maxRead) {
-        indexEnd = indexStart + config.maxRead - 1;
+      const maxRead = config.maxRead ? config.maxRead : 25;
+      if(indexEnd - indexStart + 1 > maxRead) {
+        indexEnd = indexStart + maxRead - 1;
       }
 
       InMessage
