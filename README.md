@@ -6,6 +6,13 @@ A reference implementation homeserver for the research anonymity protocol [Disto
 The homeserver is created with Node.js and stores its data to a MongoDB database. It can be interacted with remotely through REST API calls. 
 A privately managed IPFS node must be exposed to the homeserver for pushing and receiving messages.
 
+### Security
+DistoRt provides both **anonymity** and **confidentiality**. This means that both the recipients and contents of messages are hidden from anyone monitoring the communication.
+This is achieved through the use of public-key cryptography and a broadcast network. Messages are encrypted using the public key of the recipient and broadcast over the network to all participants.
+Since the message was encrypted to a specific key, only intended target will be able to decrypt and read the contents. Furthermore, since the message was broadcast, any one of the peers on the channel
+could potentially be the target of the message, providing receiver anonymity. In addition, messages are broadcast exactly once every `5 minutes` to ensure that anonymity can be preserved even when an attacker is 
+listening for patterns in timing between outgoing messages.
+
 ### Build
 ##### Docker Build
 Run `docker-compose up` to launch containers for a private Mongo database, contained IPFS node, and the distort homeserver (exposing the configured port; default is 6945).
